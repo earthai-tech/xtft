@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xtft"
+version = "0.1.0.dev0"
+description = "Cross-scale Temporal Fusion Transformer for probabilistic forecasting (PyTorch and TensorFlow backends)"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "earthai-tech", email = "etanoyau@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26,<2.3",
+  "pandas>=2.2",
+  "scipy>=1.13,<2.0",
+  "scikit-learn>=1.4",
+  "statsmodels>=0.14",
+  "matplotlib>=3.6",
+  "joblib>=1.3",
+  "tqdm>=4.65",
+  "PyYAML>=6.0",
+  "packaging>=23",
+  "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+# torch<=2.5 keeps manylinux2014 wheels for glibc-2.17 clusters.
+torch = ["torch>=2.1"]
+tf = ["tensorflow>=2.20,<3.0"]
+bench = [
+  "neuralforecast>=1.7",
+  "statsforecast>=1.7",
+  "lightgbm>=4.0",
+  "xgboost>=2.0",
+]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.urls]
+Source = "https://github.com/earthai-tech/xtft"
+Issues = "https://github.com/earthai-tech/xtft/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+xtft = ["_log.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --doctest-modules --ignore=reference"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 71
+target-version = "py310"
+src = ["src"]
+# Code ported verbatim from fusionlab-learn is linted when it is
+# rewritten; new code is held to the 71-character standard now.
+extend-exclude = [
+  "reference",
+  "src/xtft/_configs.py",
+  "src/xtft/_deps.py",
+  "src/xtft/_dummies.py",
+  "src/xtft/_log.py",
+  "src/xtft/_optdeps.py",
+  "src/xtft/_util.py",
+  "src/xtft/decorators.py",
+  "src/xtft/exceptions.py",
+  "src/xtft/api",
+  "src/xtft/backends/array",
+  "src/xtft/compat/_config.py",
+  "src/xtft/compat/__init__.py",
+  "src/xtft/compat/keras*.py",
+  "src/xtft/compat/kt.py",
+  "src/xtft/compat/numpy.py",
+  "src/xtft/compat/pandas.py",
+  "src/xtft/compat/scipy.py",
+  "src/xtft/compat/sklearn.py",
+  "src/xtft/compat/tf.py",
+  "src/xtft/compat/types.py",
+  "src/xtft/core",
+  "src/xtft/metrics",
+  "src/xtft/utils",
+  "src/xtft/nn/tf/components",
+  "src/xtft/nn/tf/hybrid/_*.py",
+  "src/xtft/nn/tf/hybrid/utils.py",
+  "src/xtft/nn/tf/transformers/_*.py",
+  "src/xtft/nn/tf/_*.py",
+  "src/xtft/nn/tf/[a-z]*.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "D"]
+ignore = ["D105", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D103"]
+"tools/*" = ["D103"]
