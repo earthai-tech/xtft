@@ -5,7 +5,7 @@ frame (``unique_id``, ``ds``, ``y`` plus covariates), the column
 roles, and the validation and test lengths in steps. Data are
 cached under ``XTFT_DATA`` (default: ``data/raw`` at the
 repository root, see ``data/README.md``); on the HPC point it to
-``/SCRATCH/kouakloMI/xtft/data``.
+``$XTFT_SCRATCH/data``.
 
 Long-horizon datasets come from the ``datasetsforecast`` package
 (Nixtla), which distributes the ETT, ECL, Exchange, Traffic, ILI

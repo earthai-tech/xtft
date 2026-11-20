@@ -1,16 +1,16 @@
 """PyTorch implementation of XTFT (reference implementation).
 
-Planned layout, filled during the method redesign (see PLAN.md):
-
 ``layers/``
-    Variable selection, gated residual networks, anti-aliased
-    multi-resolution encoder, cross-scale attention, learnable
-    windows.
+    Gated residual networks, variable selection, anti-aliased
+    multi-resolution encoder, local and cross-scale attention.
 ``models/``
-    ``tft.py`` (TFT baseline) and ``xtft.py`` (XTFT, SuperXTFT).
+    :class:`~xtft.nn.torch.models.XTFT`.
 ``probabilistic/``
-    Non-crossing quantile head, conformal calibration, losses.
+    Non-crossing quantile head and pinball (quantile) loss.
+``trainer``
+    :func:`~xtft.nn.torch.trainer.fit` and
+    :func:`~xtft.nn.torch.trainer.predict`.
 
-Models are resolved through :mod:`xtft.nn`; until a module exists,
-the lookup raises :class:`NotImplementedError`.
+Conformal calibration is framework-agnostic and lives in
+:mod:`xtft.evaluation`. Models are resolved through :mod:`xtft.nn`.
 """

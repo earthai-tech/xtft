@@ -15,13 +15,19 @@
 
 set -euo pipefail
 
+# Site settings (conda, env, scratch): jobs/site.env, untracked;
+# copy jobs/site.env.example and edit it.
+source "${SLURM_SUBMIT_DIR}/jobs/site.env"
+: "${XTFT_CONDA_SH:?set in jobs/site.env}"
+: "${XTFT_ENV:?set in jobs/site.env}"
+: "${XTFT_SCRATCH:?set in jobs/site.env}"
 set +u
-source /SCRATCH/kouakloMI/miniforge3/etc/profile.d/conda.sh
-conda activate /SCRATCH/kouakloMI/envs/xtft
+source "${XTFT_CONDA_SH}"
+conda activate "${XTFT_ENV}"
 set -u
 
 export TF_CPP_MIN_LOG_LEVEL=2
-OUT=/SCRATCH/kouakloMI/xtft/speed
+OUT=${XTFT_SCRATCH}/speed
 mkdir -p "${OUT}"
 cd "${SLURM_SUBMIT_DIR}"
 echo "node=$(hostname) job=${SLURM_JOB_ID} commit=$(git rev-parse --short HEAD)"

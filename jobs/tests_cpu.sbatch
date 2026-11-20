@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run the xtft test suite on one CPU node of wombele17.
+# Run the xtft test suite on one CPU node.
 # Submit from ~/projects/xtft:  sbatch jobs/tests_cpu.sbatch
 # SLURM 15.08: %x is unsupported, so the job name is written
 # literally in the log paths.
@@ -15,10 +15,15 @@
 
 set -euo pipefail
 
-# conda's activate scripts reference unset variables.
+# Site settings (conda, env, scratch): jobs/site.env, untracked;
+# copy jobs/site.env.example and edit it.
+source "${SLURM_SUBMIT_DIR}/jobs/site.env"
+: "${XTFT_CONDA_SH:?set in jobs/site.env}"
+: "${XTFT_ENV:?set in jobs/site.env}"
+: "${XTFT_SCRATCH:?set in jobs/site.env}"
 set +u
-source /SCRATCH/kouakloMI/miniforge3/etc/profile.d/conda.sh
-conda activate /SCRATCH/kouakloMI/envs/xtft
+source "${XTFT_CONDA_SH}"
+conda activate "${XTFT_ENV}"
 set -u
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"

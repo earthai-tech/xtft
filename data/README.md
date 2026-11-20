@@ -5,8 +5,8 @@ is tracked by git; the data themselves stay out of the repository.
 
 | Folder | Content | Local storage | HPC storage |
 |---|---|---|---|
-| `raw/` | downloads as distributed (datasetsforecast long-horizon archive, ...) | `E:\_DATA\xtft\raw` (junction) | `/SCRATCH/kouakloMI/xtft/data` |
-| `processed/` | derived panels (Nansha/Zhongshan Stage-1 exports, ...) | `E:\_DATA\xtft\processed` (junction) | `/SCRATCH/kouakloMI/xtft/processed` |
+| `raw/` | downloads as distributed (datasetsforecast long-horizon archive, ...) | `E:\_DATA\xtft\raw` (junction) | `$XTFT_SCRATCH/data` |
+| `processed/` | derived panels (Nansha/Zhongshan Stage-1 exports, ...) | `E:\_DATA\xtft\processed` (junction) | `$XTFT_SCRATCH/processed` |
 
 `benchmarks/datasets.py` reads and caches into `data/raw` unless the
 `XTFT_DATA` environment variable points elsewhere (the SLURM scripts

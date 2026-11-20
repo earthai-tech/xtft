@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xtft"
 version = "0.1.0.dev0"
-description = "Cross-scale Temporal Fusion Transformer for probabilistic forecasting (PyTorch and TensorFlow backends)"
+description = "Cross-Scale Temporal Fusion Transformers for calibrated probabilistic forecasting (PyTorch and TensorFlow backends)"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "earthai-tech", email = "etanoyau@gmail.com" }]
@@ -31,6 +31,7 @@ tf = ["tensorflow>=2.20,<3.0"]
 bench = [
   "neuralforecast>=1.7",
   "statsforecast>=1.7",
+  "datasetsforecast>=1.0",
   "lightgbm>=4.0",
   "xgboost>=2.0",
 ]
@@ -112,4 +113,5 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D103"]
 "tools/*" = ["D103"]
+"tools/make_logo.py" = ["D103", "E501"]  # SVG markup
 "benchmarks/*" = ["D103"]

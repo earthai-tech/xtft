@@ -2,7 +2,7 @@
 
 Job 106505, 2026-11-20, node wombele180 (partition
 `B720-ibe-compute_28_64`, 28 cores, exclusive), env
-`/SCRATCH/kouakloMI/envs/xtft` (torch 2.5.1+cpu, TensorFlow 2.20).
+`xtft` (torch 2.5.1+cpu, TensorFlow 2.20).
 Code: working tree on top of commit `c39393d` (the PyTorch XTFT
 before its first commit). Raw data: `results/speed_t*_106505.json`.
 

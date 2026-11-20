@@ -23,15 +23,21 @@ if [ -z "${LINE}" ]; then
     echo "no task on line ${SLURM_ARRAY_TASK_ID}"; exit 1
 fi
 
+# Site settings (conda, env, scratch): jobs/site.env, untracked;
+# copy jobs/site.env.example and edit it.
+source "${SLURM_SUBMIT_DIR}/jobs/site.env"
+: "${XTFT_CONDA_SH:?set in jobs/site.env}"
+: "${XTFT_ENV:?set in jobs/site.env}"
+: "${XTFT_SCRATCH:?set in jobs/site.env}"
 set +u
-source /SCRATCH/kouakloMI/miniforge3/etc/profile.d/conda.sh
-conda activate /SCRATCH/kouakloMI/envs/xtft
+source "${XTFT_CONDA_SH}"
+conda activate "${XTFT_ENV}"
 set -u
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
-export XTFT_DATA=/SCRATCH/kouakloMI/xtft/data
-OUT=/SCRATCH/kouakloMI/xtft/results/${SLURM_ARRAY_JOB_ID}
+export XTFT_DATA=${XTFT_SCRATCH}/data
+OUT=${XTFT_SCRATCH}/results/${SLURM_ARRAY_JOB_ID}
 mkdir -p "${OUT}" "${XTFT_DATA}"
 
 cd "${SLURM_SUBMIT_DIR}"

@@ -24,3 +24,13 @@ paper/**/*.bbl
 paper/**/*.blg
 paper/**/*.out
 paper/**/*.synctex.gz
+
+# Not public before the paper is accepted: planning notes, review
+# responses, manuscript drafts, figures; site-specific job settings.
+/private/
+/paper/manuscript/*
+!/paper/manuscript/.gitkeep
+/paper/figures/*
+!/paper/figures/.gitkeep
+/paper/review/
+/jobs/site.env
