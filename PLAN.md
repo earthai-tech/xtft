@@ -101,8 +101,30 @@ Protocol (implemented in `benchmarks/run.py` and `xtft.data`):
 * 11 quantile levels (0.05, 0.1, ..., 0.9, 0.95), so the CRPS
   proxy and the 90/80/60/40/20% intervals are all available;
 * five seeds for learned models (statistical models are
-  deterministic: one run), Diebold-Mariano tests and
-  Friedman/Nemenyi critical-difference diagrams (to add).
+  deterministic: one run);
+* Diebold-Mariano tests (Harvey-Leybourne-Newbold correction) of
+  XTFT against each baseline on per-origin CRPS, and the Friedman
+  test with Nemenyi critical difference over (dataset, horizon)
+  tasks (done: `xtft.evaluation.stats`, `benchmarks/aggregate.py
+  --reference xtft`; per-window losses saved by `run.py`);
+* CQR calibration windows at validation stride `H // 4` (test
+  stride `H`).
+
+Equal budget, round 1: 2000 optimiser steps for every learned
+model (XTFT 20 epochs x 100 steps), early-stopping patience 500
+steps (XTFT 5 epochs; neuralforecast 10 checks every 50 steps),
+XTFT batch 128 windows; neuralforecast batch sizes at library
+defaults (more windows per step than XTFT: noted in the paper).
+
+Round 1 (2026-11-20): ETTh1/h2/m1/m2 x H in {96, 192, 336, 720} x
+seeds {0, 1, 2}; jobs 106557 (xtft, PatchTST, NHITS, DLinear,
+SeasonalNaive, AutoETS; 224 tasks) and 106558 (TFT; 48 tasks).
+The first 20 tasks of 106557 started before `run.py` saved
+per-window losses: rerun the tasks whose JSON has no
+`_losses.npz` before the DM tests. TFT at H = 720 runs out of memory
+with neuralforecast's default 1024 windows per batch (an 11 GB
+attention tensor): those 12 tasks run in job 106600 with
+`windows_batch_size=128` (XTFT's batch size) and 32 GB.
 
 Harness: `benchmarks/datasets.py` (registry; `Synthetic` for smoke
 tests), `benchmarks/models.py` (adapters `xtft`, `nf:<Model>`,

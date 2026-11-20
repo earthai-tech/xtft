@@ -6,8 +6,9 @@ Protocol (see ``xtft.data.panel`` for the details):
   dataset's conventional validation and test lengths;
 * models fitted on the train period, early stopping on the
   validation period;
-* forecasts at shared rolling origins (stride ``--stride``) in the
-  validation and test periods;
+* forecasts at shared rolling origins in the validation
+  (``--val-stride``, default ``H // 4``) and test (``--stride``,
+  default ``H``) periods;
 * split-conformal calibration (CQR, per horizon step) fitted on
   the validation forecasts and applied to the test forecasts;
 * all metrics in train-standardised units of each series, plus
@@ -65,6 +66,23 @@ def _seasonal_scales(panel, val_start, season) -> np.ndarray:
     return out
 
 
+def _window_losses(y, q, quantiles) -> dict:
+    """Per-window CRPS proxy and median absolute error, (N,) each.
+
+    Same definitions as the aggregate metrics (CRPS = twice the
+    mean pinball loss), averaged over the horizon only, so paired
+    tests (Diebold-Mariano) can compare models window by window.
+    """
+    tau = np.asarray(quantiles)
+    diff = y[..., None] - q
+    pin = np.maximum(tau * diff, (tau - 1.0) * diff)
+    with np.errstate(invalid="ignore"):
+        crps = 2.0 * np.nanmean(pin, axis=(1, 2))
+        med = q[..., int(np.argmin(np.abs(tau - 0.5)))]
+        ae = np.nanmean(np.abs(y - med), axis=1)
+    return {"crps": crps, "ae": ae}
+
+
 def _metrics(y, q, quantiles, scales) -> dict:
     out = evaluate_quantile_forecast(y, q, quantiles)
     scaled = evaluate_quantile_forecast(
@@ -87,7 +105,17 @@ def main(argv=None) -> dict:
         "--stride",
         type=int,
         default=None,
-        help="origin spacing in val/test (default: H)",
+        help="origin spacing in the test period (default: H)",
+    )
+    ap.add_argument(
+        "--val-stride",
+        type=int,
+        default=None,
+        help=(
+            "origin spacing in the validation period, which "
+            "provides the CQR calibration windows (default: "
+            "max(1, H // 4))"
+        ),
     )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-epochs", type=int, default=100)
@@ -136,10 +164,15 @@ def main(argv=None) -> dict:
 
     h, t_in = args.horizon, args.input_size
     stride = args.stride or h
+    # Denser validation origins give CQR more (overlapping, hence
+    # dependent) calibration windows: 30 at stride H on ETTh1.
+    val_stride = args.val_stride or max(1, h // 4)
     train_idx = panel.origins(
         np.zeros_like(val_start), val_start, t_in, h, 1
     )
-    val_idx = panel.origins(val_start - 1, test_start, t_in, h, stride)
+    val_idx = panel.origins(
+        val_start - 1, test_start, t_in, h, val_stride
+    )
     test_idx = panel.origins(test_start - 1, None, t_in, h, stride)
     logger.info(
         "windows: train %d, val %d, test %d",
@@ -187,6 +220,7 @@ def main(argv=None) -> dict:
         "horizon": h,
         "input_size": t_in,
         "stride": stride,
+        "val_stride": val_stride,
         "seed": args.seed,
         "n_series": panel.n_series,
         "windows": {
@@ -223,6 +257,18 @@ def main(argv=None) -> dict:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     path = args.out_dir / f"{tag}.json"
     path.write_text(json.dumps(result, indent=2, default=float))
+    # Per-window test losses for paired significance tests; small
+    # (two floats per window), so always written.
+    raw = _window_losses(y_test, q_test, QUANTILES)
+    cal_l = _window_losses(y_test, q_test_cal, QUANTILES)
+    np.savez_compressed(
+        args.out_dir / f"{tag}_losses.npz",
+        test_index=test_idx,
+        crps=raw["crps"],
+        ae=raw["ae"],
+        crps_cqr=cal_l["crps"],
+        ae_cqr=cal_l["ae"],
+    )
     if args.save_preds:
         np.savez_compressed(
             args.out_dir / f"{tag}_preds.npz",

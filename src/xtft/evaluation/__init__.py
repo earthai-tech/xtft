@@ -20,14 +20,24 @@ from .metrics import (
     rmse,
     seasonal_scale,
 )
+from .stats import (
+    DieboldMarianoResult,
+    FriedmanNemenyiResult,
+    diebold_mariano,
+    friedman_nemenyi,
+)
 
 __all__ = [
+    "DieboldMarianoResult",
+    "FriedmanNemenyiResult",
     "ConformalQuantileCalibrator",
     "calibration_curve",
     "conformal_margin",
     "coverage",
     "crps_from_quantiles",
+    "diebold_mariano",
     "evaluate_quantile_forecast",
+    "friedman_nemenyi",
     "interval_pairs",
     "interval_score",
     "mae",

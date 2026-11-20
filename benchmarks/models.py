@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["RunContext", "make_model"]
 
+# neuralforecast validation interval, in optimiser steps.
+_VAL_CHECK = 50
+
 
 @dataclass
 class RunContext:
@@ -47,6 +50,8 @@ class RunContext:
     seed: int = 0
     max_epochs: int = 100
     max_steps: int = 2000
+    # Early-stopping patience in epochs of `steps_per_epoch`
+    # optimiser steps, converted to steps for neuralforecast.
     patience: int = 10
     batch_size: int = 64
     steps_per_epoch: int | None = 200
@@ -223,8 +228,17 @@ class NeuralForecastAdapter(_HistoryLoop):
             "input_size": ctx.input_size,
             "loss": MQLoss(level=ctx.levels),
             "max_steps": ctx.max_steps,
-            "early_stop_patience_steps": ctx.patience,
-            "val_check_steps": 50,
+            # Same patience in optimiser steps as XTFT:
+            # patience epochs of steps_per_epoch steps each.
+            "early_stop_patience_steps": max(
+                1,
+                -(
+                    -ctx.patience
+                    * (ctx.steps_per_epoch or _VAL_CHECK)
+                    // _VAL_CHECK
+                ),
+            ),
+            "val_check_steps": _VAL_CHECK,
             "batch_size": min(ctx.batch_size, 32),
             "random_seed": ctx.seed,
             "scaler_type": "standard",

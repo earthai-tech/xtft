@@ -86,7 +86,7 @@ and calibrated with the same code.
 ```powershell
 python benchmarks/run.py --dataset ETTh1 --model xtft --horizon 96
 python benchmarks/run.py --dataset ETTh1 --model nf:PatchTST --horizon 96
-python benchmarks/aggregate.py results --metric crps_q
+python benchmarks/aggregate.py results --metric crps_q --reference xtft
 ```
 
 Models: `xtft`, any neuralforecast model as `nf:<Name>`, any
