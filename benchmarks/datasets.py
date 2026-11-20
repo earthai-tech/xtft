@@ -3,8 +3,9 @@
 Each loader returns a :class:`BenchmarkData` with a long-format
 frame (``unique_id``, ``ds``, ``y`` plus covariates), the column
 roles, and the validation and test lengths in steps. Data are
-cached under ``XTFT_DATA`` (default ``./data``); on the HPC point
-it to ``/SCRATCH/kouakloMI/xtft/data``.
+cached under ``XTFT_DATA`` (default: ``data/raw`` at the
+repository root, see ``data/README.md``); on the HPC point it to
+``/SCRATCH/kouakloMI/xtft/data``.
 
 Long-horizon datasets come from the ``datasetsforecast`` package
 (Nixtla), which distributes the ETT, ECL, Exchange, Traffic, ILI
@@ -30,6 +31,8 @@ from pathlib import Path
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 __all__ = ["BenchmarkData", "available", "load"]
 
@@ -101,7 +104,10 @@ class BenchmarkData:
 
 
 def _data_dir() -> Path:
-    path = Path(os.environ.get("XTFT_DATA", "data"))
+    # Repository data/raw (a junction to E:\_DATA\xtft\raw on the
+    # development laptop) unless XTFT_DATA overrides it.
+    default = _REPO_ROOT / "data" / "raw"
+    path = Path(os.environ.get("XTFT_DATA", default))
     path.mkdir(parents=True, exist_ok=True)
     return path
 
