@@ -5,6 +5,7 @@ and calibrated by these NumPy functions, so differences between
 models cannot come from different metric code.
 """
 
+from .bands import SimultaneousConformalBand, path_coverage
 from .conformal import (
     AdaptiveConformalCalibrator,
     ConformalQuantileCalibrator,
@@ -33,6 +34,7 @@ from .stats import (
 
 __all__ = [
     "AdaptiveConformalCalibrator",
+    "SimultaneousConformalBand",
     "DieboldMarianoResult",
     "FriedmanNemenyiResult",
     "ConformalQuantileCalibrator",
@@ -48,6 +50,7 @@ __all__ = [
     "mae",
     "mase",
     "mean_width",
+    "path_coverage",
     "pinball",
     "rmse",
     "seasonal_scale",

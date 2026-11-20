@@ -47,6 +47,7 @@ is reported:
 | 🔀 **Cross-scale attention** | Causal attention with a learned soft window inside each resolution, then attention from every forecast step across all resolutions, with a per-step scale attribution. |
 | 📐 **Calibrated quantiles** | A monotone quantile head (quantiles never cross) and split-conformal calibration per horizon step, applied identically to any model. |
 | 🛰️ **Shift-robust intervals** | Adaptive conformal calibration re-estimates the interval margins causally as new observations arrive, keeping long-run coverage near nominal when the error distribution drifts after the calibration period. |
+| 🛤️ **Whole-path bands** | Conformal bands that contain the entire forecast path, not just each step, with a shift-adaptive version that updates causally as paths are observed. |
 | 🔍 **Interpretability** | Static, past and future variable weights, scale attributions and learned attention windows come out of the forward pass. |
 | 🌊 **Distribution shift** | Optional reversible instance normalisation for series whose level drifts outside the training range. |
 
@@ -123,6 +124,18 @@ from xtft.evaluation import AdaptiveConformalCalibrator
 aci = AdaptiveConformalCalibrator(quantiles, gamma=0.005)
 q_test_aci = aci.fit(y_val, q_val).transform(
     y_test, q_test, times=origin_times)
+```
+
+Per-step intervals say little about the whole path: an 80% band
+for every hour of tomorrow can contain all 24 hours on only a small
+fraction of days. `SimultaneousConformalBand` covers whole paths:
+
+```python
+from xtft.evaluation import SimultaneousConformalBand, path_coverage
+
+band = SimultaneousConformalBand(quantiles, coverage=0.8).fit(y_val, q_val)
+lower, upper = band.transform_online(y_test, q_test, times=origin_times)
+path_coverage(y_test, lower, upper)   # fraction of fully covered paths
 ```
 
 `xtft.evaluation` works on NumPy arrays from any model: pinball loss,

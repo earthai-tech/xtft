@@ -47,7 +47,10 @@ from xtft.data import PanelData, PanelSpec, WindowDataset  # noqa: E402
 from xtft.evaluation import (  # noqa: E402
     AdaptiveConformalCalibrator,
     ConformalQuantileCalibrator,
+    SimultaneousConformalBand,
     evaluate_quantile_forecast,
+    interval_pairs,
+    path_coverage,
 )
 
 logger = logging.getLogger("xtft.bench")
@@ -87,6 +90,53 @@ def _window_losses(y, q, quantiles) -> dict:
         med = q[..., int(np.argmin(np.abs(tau - 0.5)))]
         ae = np.nanmean(np.abs(y - med), axis=1)
     return {"crps": crps, "ae": ae}
+
+
+def band_metrics(
+    y_val, q_val, y_test, q_test, q_test_cqr, times, gamma=0.005
+) -> dict:
+    """Whole-path coverage and width of five band constructions.
+
+    For each nominal level: the raw and the CQR-calibrated per-step
+    intervals read as a band (``raw``, ``cqr``), the simultaneous
+    ``max`` and ``bonferroni`` bands fitted on the validation
+    forecasts, and the ``max`` band updated causally along the
+    test origins (``max_online``, step size `gamma`). Widths are
+    mean band widths in the scaled units (``inf`` for an
+    unbounded band).
+    """
+    out = {}
+    pairs = {
+        round(c, 6): (i, j) for i, j, c in interval_pairs(QUANTILES)
+    }
+    for level in (0.8, 0.9):
+        i, j = pairs[level]
+        res = {}
+        for name, q in (("raw", q_test), ("cqr", q_test_cqr)):
+            lo, hi = q[..., i], q[..., j]
+            res[name] = {
+                "path_coverage": path_coverage(y_test, lo, hi),
+                "width": float(np.mean(hi - lo)),
+            }
+        for method in ("max", "bonferroni"):
+            band = SimultaneousConformalBand(
+                QUANTILES, level, method=method
+            ).fit(y_val, q_val)
+            lo, hi = band.transform(q_test)
+            res[method] = {
+                "path_coverage": path_coverage(y_test, lo, hi),
+                "width": float(np.mean(hi - lo)),
+            }
+            if method == "max":
+                lo, hi = band.transform_online(
+                    y_test, q_test, times, gamma=gamma
+                )
+                res["max_online"] = {
+                    "path_coverage": path_coverage(y_test, lo, hi),
+                    "width": float(np.mean(hi - lo)),
+                }
+        out[f"{round(100 * level)}"] = res
+    return out
 
 
 def _metrics(y, q, quantiles, scales) -> dict:
@@ -334,6 +384,15 @@ def main(argv=None) -> dict:
                 y_test, q_test_aci, QUANTILES, scales[test_idx[:, 0]]
             ),
         },
+        "bands": band_metrics(
+            y_val,
+            q_val,
+            y_test,
+            q_test,
+            q_test_cal,
+            times=test_idx[:, 1],
+            gamma=args.aci_gamma,
+        ),
         "seconds": {
             "fit": fit_s,
             "predict": predict_s,

@@ -102,6 +102,48 @@ def recalibrate(path: Path, gammas, windows) -> list[dict]:
     return rows
 
 
+def bands_table(roots) -> pd.DataFrame:
+    """Path coverage and width of the band constructions per run."""
+    from run import band_metrics
+
+    rows = []
+    for root in roots:
+        for path in sorted(root.rglob("*_preds.npz")):
+            res = json.loads(
+                path.with_name(
+                    path.name.replace("_preds.npz", ".json")
+                ).read_text()
+            )
+            d = np.load(path)
+            y_val, q_val = (
+                d[k].astype(float) for k in ("y_val", "q_val")
+            )
+            y, q = (d[k].astype(float) for k in ("y_test", "q_test"))
+            tau = tuple(float(t) for t in d["quantiles"])
+            q_cqr = (
+                ConformalQuantileCalibrator(tau)
+                .fit(y_val, q_val)
+                .transform(q)
+            )
+            stats = band_metrics(
+                y_val, q_val, y, q, q_cqr, times=d["test_index"][:, 1]
+            )
+            for level, methods in stats.items():
+                for method, m in methods.items():
+                    rows.append(
+                        {
+                            "dataset": res["dataset"],
+                            "model": res["model"],
+                            "horizon": res["horizon"],
+                            "seed": res["seed"],
+                            "level": int(level),
+                            "method": method,
+                            **m,
+                        }
+                    )
+    return pd.DataFrame(rows)
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("roots", type=Path, nargs="+")
@@ -116,7 +158,23 @@ def main(argv=None) -> None:
         help="score windows; 0 keeps all scores",
     )
     ap.add_argument("--out", type=Path, default=Path("aci_grid.csv"))
+    ap.add_argument(
+        "--bands",
+        action="store_true",
+        help="evaluate simultaneous bands instead of the ACI grid",
+    )
     args = ap.parse_args(argv)
+    if args.bands:
+        table = bands_table(args.roots)
+        table.to_csv(args.out, index=False)
+        pd.set_option("display.width", 160)
+        wide = table.pivot_table(
+            index=["dataset", "model", "level"],
+            columns="method",
+            values=["path_coverage", "width"],
+        )
+        print(wide.round(3).to_string())
+        return
     rows = []
     for root in args.roots:
         for path in sorted(root.rglob("*_preds.npz")):
