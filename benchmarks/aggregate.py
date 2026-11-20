@@ -86,8 +86,9 @@ def dm_table(
     files = {}
     losses = (p for r in roots for p in r.rglob("*_losses.npz"))
     for path in losses:
-        res_path = path.with_name(path.name[: -len("_losses.npz")])
-        res_path = res_path.with_suffix(".json")
+        # Not with_suffix: tags such as "_missb0.3" contain dots.
+        stem = path.name[: -len("_losses.npz")]
+        res_path = path.with_name(stem + ".json")
         if not res_path.exists():
             continue
         res = json.loads(res_path.read_text())
