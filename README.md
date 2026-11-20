@@ -139,12 +139,19 @@ python benchmarks/run.py --dataset ETTh1 --model nf:PatchTST --horizon 96
 python benchmarks/aggregate.py results --metric crps_q --reference xtft
 ```
 
-* **Datasets**: ETTh1/h2/m1/m2, Electricity, Traffic, Exchange, ILI,
-  Weather (downloaded on first use into `data/raw`); covariate-rich
-  sets to come.
+* **Datasets**: long-horizon ETTh1/h2/m1/m2, Electricity, Traffic,
+  Exchange, ILI and Weather; day-ahead electricity prices of five
+  markets (`EPF-NP`, `EPF-PJM`, `EPF-BE`, `EPF-FR`, `EPF-DE`, open
+  benchmark of Lago et al., 2021) with load and generation
+  forecasts as known-future covariates. Downloaded on first use
+  into `data/raw`.
+* **Gap study**: `--missing-rate`, `--missing-mode random|blocks`
+  remove target values; models train on the gapped series and are
+  scored on the clean one.
 * **Models**: `xtft`, any neuralforecast model as `nf:<Name>`
-  (TFT, PatchTST, NHITS, DLinear, ...), any statsforecast model as
-  `sf:<Name>` (SeasonalNaive, AutoETS, ...).
+  (TFT, PatchTST, NHITS, DLinear, TiDE, NBEATSx, ...), any
+  statsforecast model as `sf:<Name>` (SeasonalNaive, AutoETS, ...).
+  Every model receives the covariates it supports.
 * **Protocol**: chronological train/validation/test periods, the
   same rolling origins, input length and optimisation budget for
   every learned model, conformal calibration fitted on validation

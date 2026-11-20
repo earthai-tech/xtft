@@ -105,16 +105,38 @@ class _HistoryLoop:
     """Forecast origins by re-feeding the history up to each origin.
 
     Origins are grouped by their distance from the series end, so
-    one call covers every series sharing that cutoff.
+    one call covers every series sharing that cutoff. Only the
+    columns a model can use are passed to it (`covariates`); the
+    known covariates of the forecast window (`future`) are passed
+    separately, as a library expects them for future exogenous
+    inputs.
     """
 
-    def __init__(self, ctx: RunContext) -> None:
-        df = ctx.data.df.sort_values(["unique_id", "ds"])
+    def __init__(
+        self,
+        ctx: RunContext,
+        covariates: tuple[str, ...] = (),
+        future: tuple[str, ...] = (),
+    ) -> None:
+        cols = ["unique_id", "ds", "y", *covariates]
+        df = ctx.data.df[cols].sort_values(["unique_id", "ds"])
         df = df.reset_index(drop=True)
         df["_pos"] = df.groupby("unique_id").cumcount()
         self.df = df
+        self.future_cols = list(future)
         self.pos = {sid: i for i, sid in enumerate(ctx.panel.ids)}
         self.ids = ctx.panel.ids
+
+    def _future(self, series, t0: int, h: int):
+        """Known covariates of steps t0+1 .. t0+h, or None."""
+        if not self.future_cols:
+            return None
+        rows = self.df["unique_id"].isin(series) & self.df[
+            "_pos"
+        ].between(t0 + 1, t0 + h)
+        return self.df.loc[
+            rows, ["unique_id", "ds", *self.future_cols]
+        ]
 
     def run(self, ctx: RunContext, index: np.ndarray, call):
         h, k = ctx.horizon, len(ctx.quantiles)
@@ -128,7 +150,9 @@ class _HistoryLoop:
                 self.df["unique_id"].isin(series)
                 & (self.df["_pos"] <= t0)
             ]
-            fc = call(hist.drop(columns="_pos"))
+            fc = call(
+                hist.drop(columns="_pos"), self._future(series, t0, h)
+            )
             fc = fc.reset_index()
             fc = fc.sort_values(["unique_id", "ds"])
             for r, sid in zip(rows, series, strict=True):
@@ -232,11 +256,15 @@ class NeuralForecastAdapter(_HistoryLoop):
     """neuralforecast model with a multi-quantile loss."""
 
     def __init__(self, ctx: RunContext, name: str) -> None:
-        super().__init__(ctx)
         import neuralforecast.models as nfm
         from neuralforecast.losses.pytorch import MQLoss
 
         cls = getattr(nfm, name)
+        # Covariates the model can use; the others are not passed.
+        futr = tuple(ctx.data.known) if cls.EXOGENOUS_FUTR else ()
+        hist = tuple(ctx.data.past) if cls.EXOGENOUS_HIST else ()
+        super().__init__(ctx, covariates=futr + hist, future=futr)
+        self.exog = {"futr": list(futr), "hist": list(hist)}
         kw = {
             "h": ctx.horizon,
             "input_size": ctx.input_size,
@@ -261,6 +289,10 @@ class NeuralForecastAdapter(_HistoryLoop):
             "enable_progress_bar": False,
             "logger": False,
         }
+        if futr:
+            kw["futr_exog_list"] = list(futr)
+        if hist:
+            kw["hist_exog_list"] = list(hist)
         kw.update(ctx.model_kw)
         self.name = name
         self.model = cls(**kw)
@@ -285,17 +317,26 @@ class NeuralForecastAdapter(_HistoryLoop):
         start = time.perf_counter()
         self.nf.fit(df=train_val, val_size=val_size)
         self.fit_seconds = time.perf_counter() - start
-        probe = self.nf.predict(df=train_val).reset_index()
+        end = int(np.min(ctx.test_start)) - 1
+        probe = self.nf.predict(
+            df=train_val,
+            futr_df=self._future(ctx.panel.ids, end, ctx.horizon),
+        ).reset_index()
         self.cols = _quantile_columns(probe, self.name, ctx.quantiles)
 
     def forecast(self, ctx: RunContext, index: np.ndarray):
-        return self.run(ctx, index, lambda h: self.nf.predict(df=h))
+        return self.run(
+            ctx,
+            index,
+            lambda h, f: self.nf.predict(df=h, futr_df=f),
+        )
 
     def info(self) -> dict:
         n = sum(p.numel() for p in self.model.parameters())
         return {
             "params": int(n),
             "model_kw": self.kw,
+            "exogenous": self.exog,
             "fit_seconds": self.fit_seconds,
         }
 
@@ -343,7 +384,7 @@ class StatsForecastAdapter(_HistoryLoop):
             models=[self.model], freq=ctx.data.freq, n_jobs=1
         )
 
-        def call(hist: pd.DataFrame):
+        def call(hist: pd.DataFrame, _future=None):
             hist = hist.groupby("unique_id").tail(self.max_history)
             return sf.forecast(
                 df=hist, h=ctx.horizon, level=ctx.levels

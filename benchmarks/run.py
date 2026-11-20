@@ -240,7 +240,7 @@ def main(argv=None) -> dict:
     stride = args.stride or h
     # Denser validation origins give CQR more (overlapping, hence
     # dependent) calibration windows: 30 at stride H on ETTh1.
-    val_stride = args.val_stride or max(1, h // 4)
+    val_stride = args.val_stride or data.val_stride or max(1, h // 4)
     train_idx = panel.origins(
         np.zeros_like(val_start), val_start, t_in, h, 1
     )

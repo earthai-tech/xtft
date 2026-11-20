@@ -96,6 +96,10 @@ class BenchmarkData:
         Horizons conventionally reported for this dataset.
     static, past, known : tuple of str
         Covariate column roles (empty for univariate benchmarks).
+    val_stride : int or None
+        Origin spacing in the validation period when the protocol
+        fixes it (day-ahead markets: one forecast per day); ``None``
+        lets ``run.py`` choose.
     """
 
     name: str
@@ -108,6 +112,66 @@ class BenchmarkData:
     static: tuple[str, ...] = ()
     past: tuple[str, ...] = ()
     known: tuple[str, ...] = ()
+    val_stride: int | None = None
+
+
+# Day-ahead electricity markets of the open-access benchmark of
+# Lago et al. (2021), Zenodo record 4624805 (licence listed as
+# "other-open"); hourly price with two day-ahead covariates.
+_EPF_MARKETS = ("NP", "PJM", "BE", "FR", "DE")
+_EPF_URL = "https://zenodo.org/records/4624805/files/{}.csv"
+_HOURS_PER_YEAR = 24 * 364  # protocol year: 52 weeks
+
+
+def _slug(name: str) -> str:
+    out = "".join(c.lower() if c.isalnum() else "_" for c in name)
+    return "_".join(part for part in out.split("_") if part)
+
+
+def _load_epf(name: str) -> BenchmarkData:
+    """Day-ahead price of one market with its covariates.
+
+    Protocol of the benchmark: the test period is the last two
+    52-week years (17472 hours) and a forecast of the 24 hours of
+    the next day is issued once per day. The year before the test
+    period is used for validation here. Known covariates: the two
+    day-ahead forecasts of the market (load, and wind or
+    generation) plus hour, day-of-week and month encodings.
+    """
+    from xtft.data import add_calendar_features
+
+    market = name.split("-", 1)[1]
+    path = _data_dir() / "epf" / f"{market}.csv"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.read_csv(_EPF_URL.format(market)).to_csv(path, index=False)
+    raw = pd.read_csv(path)
+    raw.columns = [c.strip() for c in raw.columns]
+    time_col, price_col, *exog = raw.columns
+    exog_names = tuple(_slug(c) for c in exog)
+    df = pd.DataFrame(
+        {
+            "unique_id": market,
+            "ds": pd.to_datetime(raw[time_col]),
+            "y": raw[price_col].astype(float),
+        }
+    )
+    for src, dst in zip(exog, exog_names, strict=True):
+        df[dst] = raw[src].astype(float)
+    df, calendar = add_calendar_features(
+        df, features=("hour", "dayofweek", "month")
+    )
+    return BenchmarkData(
+        name=name,
+        df=df,
+        freq="h",
+        season=168,
+        val_size=_HOURS_PER_YEAR,
+        test_size=2 * _HOURS_PER_YEAR,
+        horizons=(24,),
+        known=exog_names + tuple(calendar),
+        val_stride=24,
+    )
 
 
 def _data_dir() -> Path:
@@ -213,7 +277,8 @@ def _load_synthetic(name: str) -> BenchmarkData:
 
 def available() -> list[str]:
     """Names accepted by :func:`load`."""
-    return sorted([*_LONG_HORIZON, "Synthetic"])
+    epf = [f"EPF-{m}" for m in _EPF_MARKETS]
+    return sorted([*_LONG_HORIZON, *epf, "Synthetic"])
 
 
 def load(name: str) -> BenchmarkData:
@@ -235,6 +300,8 @@ def load(name: str) -> BenchmarkData:
     """
     if name in _LONG_HORIZON:
         data = _load_long_horizon(name)
+    elif name.startswith("EPF-") and name[4:] in _EPF_MARKETS:
+        data = _load_epf(name)
     elif name == "Synthetic":
         data = _load_synthetic(name)
     else:
