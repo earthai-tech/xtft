@@ -47,7 +47,17 @@ where = ["src"]
 xtft = ["_log.yml"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Doctests run for the rewritten modules; ported code joins this
+# list once its docstring examples are made runnable.
+testpaths = [
+  "tests",
+  "src/xtft/__init__.py",
+  "src/xtft/backends/__init__.py",
+  "src/xtft/backends/_framework.py",
+  "src/xtft/compat/torch.py",
+  "src/xtft/nn/__init__.py",
+  "src/xtft/nn/torch",
+]
 addopts = "-ra --doctest-modules --ignore=reference"
 filterwarnings = ["ignore::DeprecationWarning"]
 
@@ -100,3 +110,4 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D103"]
 "tools/*" = ["D103"]
+"benchmarks/*" = ["D103"]

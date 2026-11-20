@@ -8,11 +8,17 @@ implementation that matches :func:`xtft.backends.get_backend`:
 * ``"tensorflow"``: :mod:`xtft.nn.tf`, the Keras implementation
   ported from fusionlab-learn.
 
+``TFT`` is provided by the TensorFlow backend only. Benchmarks use
+an independent PyTorch TFT (neuralforecast) as the baseline, so the
+comparison does not rest on our own re-implementation of the
+competitor. The Keras ``SuperXTFT`` is no longer part of the
+public API; it stays importable from :mod:`xtft.nn.tf.hybrid`.
+
 Examples
 --------
 >>> import xtft.nn
 >>> sorted(xtft.nn.__all__)
-['SuperXTFT', 'TFT', 'XTFT']
+['TFT', 'XTFT']
 """
 
 from __future__ import annotations
@@ -21,20 +27,27 @@ import importlib
 
 from ..backends import get_backend
 
-__all__ = ["SuperXTFT", "TFT", "XTFT"]
+__all__ = ["TFT", "XTFT"]
 
-# (module, attribute) of each public model, per backend.
+# (module, attribute) of each public model per backend; None marks
+# a model that the backend deliberately does not provide.
 _REGISTRY = {
     "tensorflow": {
         "XTFT": ("xtft.nn.tf.hybrid._xtft", "XTFT"),
-        "SuperXTFT": ("xtft.nn.tf.hybrid._super_xtft", "SuperXTFT"),
         "TFT": ("xtft.nn.tf.transformers._adj_tft", "TFT"),
     },
     "torch": {
         "XTFT": ("xtft.nn.torch.models.xtft", "XTFT"),
-        "SuperXTFT": ("xtft.nn.torch.models.xtft", "SuperXTFT"),
-        "TFT": ("xtft.nn.torch.models.tft", "TFT"),
+        "TFT": None,
     },
+}
+
+_UNAVAILABLE = {
+    ("torch", "TFT"): (
+        "TFT is not implemented for the 'torch' backend: use "
+        "neuralforecast.models.TFT as the PyTorch baseline, or "
+        "xtft.backends.set_backend('tensorflow') for the Keras TFT."
+    ),
 }
 
 
@@ -44,7 +57,10 @@ def __getattr__(name: str):
             f"module {__name__!r} has no attribute {name!r}"
         )
     backend = get_backend()
-    module_name, attr = _REGISTRY[backend][name]
+    entry = _REGISTRY[backend][name]
+    if entry is None:
+        raise NotImplementedError(_UNAVAILABLE[(backend, name)])
+    module_name, attr = entry
     try:
         module = importlib.import_module(module_name)
     except ModuleNotFoundError as exc:
@@ -58,8 +74,7 @@ def __getattr__(name: str):
             raise
         raise NotImplementedError(
             f"{name} is not yet implemented for the {backend!r} "
-            "backend. Use xtft.backends.set_backend('tensorflow') "
-            "for the Keras implementation."
+            "backend."
         ) from exc
     return getattr(module, attr)
 

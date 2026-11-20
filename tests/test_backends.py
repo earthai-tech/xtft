@@ -88,12 +88,29 @@ def test_top_level_reexports():
     assert xtft.set_backend is set_backend
 
 
-def test_torch_models_not_implemented_yet():
+def test_torch_backend_resolves_xtft():
     import xtft.nn
 
     with use_backend("torch"):
-        with pytest.raises(NotImplementedError, match="torch"):
-            xtft.nn.XTFT  # noqa: B018
+        cls = xtft.nn.XTFT
+    assert cls.__module__ == "xtft.nn.torch.models.xtft"
+
+
+def test_torch_tft_points_to_baseline():
+    import xtft.nn
+
+    with use_backend("torch"):
+        with pytest.raises(
+            NotImplementedError, match="neuralforecast"
+        ):
+            xtft.nn.TFT  # noqa: B018
+
+
+def test_superxtft_not_public():
+    import xtft.nn
+
+    with pytest.raises(AttributeError):
+        xtft.nn.SuperXTFT  # noqa: B018
 
 
 def test_unknown_model_attribute():

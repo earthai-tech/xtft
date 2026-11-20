@@ -34,10 +34,10 @@ def inputs():
 
 @pytest.mark.parametrize("name", ["XTFT", "SuperXTFT"])
 def test_xtft_family_forward(name, inputs):
-    import xtft.nn
+    # SuperXTFT is legacy (not in xtft.nn); import it directly.
+    from xtft.nn.tf import hybrid
 
-    with use_backend("tensorflow"):
-        cls = getattr(xtft.nn, name)
+    cls = getattr(hybrid, name)
     assert cls.__module__.startswith("xtft.nn.tf.")
     model = cls(
         **DIMS,

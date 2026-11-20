@@ -12,6 +12,9 @@ Status: 2026-11-20. Origin: TPAMI-2025-04-1034 rejected on
 | Name | XTFT stays; "X" means *cross-scale*, not "Extreme" |
 | Target venue | International Journal of Forecasting (first), Engineering Applications of AI (alternative); software paper (JMLR MLOSS or JOSS) for the library |
 | Role of Nansha | Application case study (with Zhongshan), not the main evidence: 8 annual steps (2015-2022) cannot support a multiscale-temporal claim |
+| SuperXTFT | Dropped from the paper and the public API (2026-11-20): its extra per-input VSN/GRN is now part of XTFT itself; one model, one contribution. Legacy Keras class kept in `xtft.nn.tf.hybrid` |
+| TFT baseline | neuralforecast's independent PyTorch TFT, not our own re-implementation, so the baseline cannot be suspected of being weakened |
+| Memory attention, anomaly scoring | Not in the PyTorch XTFT; legacy Keras only |
 
 ## Reviewer issues and how each is answered
 
@@ -30,14 +33,29 @@ Status: 2026-11-20. Origin: TPAMI-2025-04-1034 rejected on
 
 ## Method changes (PyTorch implementation)
 
-1. Anti-aliased multi-resolution encoder.
-2. Cross-scale hierarchical attention with a learned window.
-3. Non-crossing quantile head plus conformalized quantile
-   regression.
-4. Measurable interpretability (per-variable, per-scale).
+1. Anti-aliased multi-resolution encoder (done:
+   `layers/multiresolution.py`; windowed-sinc low-pass, causal,
+   origin-aligned; learnable taps).
+2. Cross-scale hierarchical attention with a learned window (done:
+   `layers/attention.py`; local causal attention with per-head
+   learned window, then cross-scale attention with scale
+   attribution).
+3. Non-crossing quantile head (done) plus conformalized quantile
+   regression (to do).
+4. Measurable interpretability (done in the forward pass:
+   variable weights, scale attribution, learned windows; analysis
+   and plots to do).
 
-Memory attention and anomaly scoring remain library features, not
-paper claims.
+Flaws of the original XTFT found while porting, worth one
+paragraph in the paper: `x[:, ::s]` aliases and, being anchored
+at step 0, drops the newest observation unless `s` divides
+`T - 1`; the "dynamic time window" is a fixed slice of the last
+`W` steps; the Keras XTFT had no variable selection, and future
+covariates only entered the cross-attention embedding.
+
+Still to do on the model: scale suggestion from the periodogram,
+alternative encoders (TCN, patch) for the ablation, conformal
+calibration, `torch.compile` and GPU timing.
 
 ## Benchmarks (availability and licences to verify)
 
@@ -63,8 +81,10 @@ HPC CPU nodes (env `sci` or a project env under
 ## Work phases
 
 1. Repository bootstrap and port from fusionlab-learn (done).
-2. PyTorch TFT baseline, then PyTorch XTFT with the four changes;
-   parity tests against the Keras version where designs coincide.
+2. PyTorch XTFT with the redesign (done, 2026-11-20; tests in
+   `tests/torch`); speed against the Keras XTFT in
+   `benchmarks/speed/compare_xtft.py`. Remaining items listed
+   under "Method changes".
 3. Probabilistic metrics module and data loaders with checksums.
 4. Benchmark harness, baseline adapters, SLURM job templates.
 5. Runs, ablations, statistics.

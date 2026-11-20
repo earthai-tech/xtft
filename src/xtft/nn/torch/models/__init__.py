@@ -1,1 +1,5 @@
-"""PyTorch TFT and XTFT models (to be implemented)."""
+"""PyTorch forecasting models of xtft."""
+
+from .xtft import XTFT
+
+__all__ = ["XTFT"]
