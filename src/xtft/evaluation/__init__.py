@@ -5,7 +5,11 @@ and calibrated by these NumPy functions, so differences between
 models cannot come from different metric code.
 """
 
-from .conformal import ConformalQuantileCalibrator, conformal_margin
+from .conformal import (
+    AdaptiveConformalCalibrator,
+    ConformalQuantileCalibrator,
+    conformal_margin,
+)
 from .metrics import (
     calibration_curve,
     coverage,
@@ -28,6 +32,7 @@ from .stats import (
 )
 
 __all__ = [
+    "AdaptiveConformalCalibrator",
     "DieboldMarianoResult",
     "FriedmanNemenyiResult",
     "ConformalQuantileCalibrator",

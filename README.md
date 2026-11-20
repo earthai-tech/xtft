@@ -46,6 +46,7 @@ is reported:
 | 🎚️ **Anti-aliased multi-resolution encoder** | Each coarse view of the history is low-pass filtered (windowed sinc, cut-off at the new Nyquist frequency) before decimation, on a grid anchored at the forecast origin, so no scale aliases and the newest observation is never dropped. |
 | 🔀 **Cross-scale attention** | Causal attention with a learned soft window inside each resolution, then attention from every forecast step across all resolutions, with a per-step scale attribution. |
 | 📐 **Calibrated quantiles** | A monotone quantile head (quantiles never cross) and split-conformal calibration per horizon step, applied identically to any model. |
+| 🛰️ **Shift-robust intervals** | Adaptive conformal calibration re-estimates the interval margins causally as new observations arrive, keeping long-run coverage near nominal when the error distribution drifts after the calibration period. |
 | 🔍 **Interpretability** | Static, past and future variable weights, scale attributions and learned attention windows come out of the forward pass. |
 | 🌊 **Distribution shift** | Optional reversible instance normalisation for series whose level drifts outside the training range. |
 
@@ -110,6 +111,18 @@ cal = ConformalQuantileCalibrator(quantiles).fit(y_val, q_val)
 q_test_cal = cal.transform(q_test)   # CQR, one margin per step
 evaluate_quantile_forecast(y_test, q_test_cal, quantiles)
 # -> pinball, crps_q, mae, rmse, coverage_80, winkler_80, ...
+```
+
+When the series may drift after the calibration period, calibrate
+along the forecast origins instead; each margin uses only targets
+observed before its origin:
+
+```python
+from xtft.evaluation import AdaptiveConformalCalibrator
+
+aci = AdaptiveConformalCalibrator(quantiles, gamma=0.005)
+q_test_aci = aci.fit(y_val, q_val).transform(
+    y_test, q_test, times=origin_times)
 ```
 
 `xtft.evaluation` works on NumPy arrays from any model: pinball loss,

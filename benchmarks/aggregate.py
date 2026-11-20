@@ -194,7 +194,9 @@ def main(argv=None) -> None:
         )
 
     if args.reference:
-        key = "crps_cqr" if args.split == "test_cqr" else "crps"
+        key = {"test_cqr": "crps_cqr", "test_aci": "crps_aci"}.get(
+            args.split, "crps"
+        )
         dm = dm_table(args.roots, args.reference, key)
         if dm.empty:
             print("\nNo per-window losses for the DM tests.")

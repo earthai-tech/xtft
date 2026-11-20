@@ -10,7 +10,12 @@ Protocol (see ``xtft.data.panel`` for the details):
   (``--val-stride``, default ``H // 4``) and test (``--stride``,
   default ``H``) periods;
 * split-conformal calibration (CQR, per horizon step) fitted on
-  the validation forecasts and applied to the test forecasts;
+  the validation forecasts and applied to the test forecasts
+  (``test_cqr``), and adaptive conformal calibration seeded with
+  the same validation scores and updated causally as test targets
+  are observed (``test_aci``);
+* validation and test forecasts saved (``_preds.npz``, float32) so
+  other calibrations can be evaluated without refitting;
 * all metrics in train-standardised units of each series, plus
   MASE and MSIS with the in-sample seasonal scale.
 
@@ -40,6 +45,7 @@ from models import RunContext, make_model  # noqa: E402
 
 from xtft.data import PanelData, PanelSpec, WindowDataset  # noqa: E402
 from xtft.evaluation import (  # noqa: E402
+    AdaptiveConformalCalibrator,
     ConformalQuantileCalibrator,
     evaluate_quantile_forecast,
 )
@@ -134,7 +140,23 @@ def main(argv=None) -> dict:
     )
     ap.add_argument("--threads", type=int, default=None)
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
-    ap.add_argument("--save-preds", action="store_true")
+    ap.add_argument(
+        "--no-preds",
+        action="store_true",
+        help="do not save the validation and test forecasts",
+    )
+    ap.add_argument(
+        "--aci-gamma",
+        type=float,
+        default=0.005,
+        help="step size of adaptive conformal calibration",
+    )
+    ap.add_argument(
+        "--aci-window",
+        type=int,
+        default=None,
+        help="recent scores kept per step by ACI (default: all)",
+    )
     args = ap.parse_args(argv)
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(message)s"
@@ -213,6 +235,14 @@ def main(argv=None) -> dict:
     scales = _seasonal_scales(panel, val_start, data.season)
     cal = ConformalQuantileCalibrator(QUANTILES).fit(y_val, q_val)
     q_test_cal = cal.transform(q_test)
+    aci = AdaptiveConformalCalibrator(
+        QUANTILES, gamma=args.aci_gamma, window=args.aci_window
+    )
+    # Origins are positions in each series; all series of a
+    # benchmark share the same time axis.
+    q_test_aci = aci.fit(y_val, q_val).transform(
+        y_test, q_test, times=test_idx[:, 1]
+    )
 
     result = {
         "dataset": args.dataset,
@@ -229,6 +259,7 @@ def main(argv=None) -> dict:
             "test": len(test_idx),
         },
         "quantiles": QUANTILES,
+        "aci": {"gamma": args.aci_gamma, "window": args.aci_window},
         "metrics": {
             "val": _metrics(
                 y_val, q_val, QUANTILES, scales[val_idx[:, 0]]
@@ -238,6 +269,9 @@ def main(argv=None) -> dict:
             ),
             "test_cqr": _metrics(
                 y_test, q_test_cal, QUANTILES, scales[test_idx[:, 0]]
+            ),
+            "test_aci": _metrics(
+                y_test, q_test_aci, QUANTILES, scales[test_idx[:, 0]]
             ),
         },
         "seconds": {
@@ -261,6 +295,7 @@ def main(argv=None) -> dict:
     # (two floats per window), so always written.
     raw = _window_losses(y_test, q_test, QUANTILES)
     cal_l = _window_losses(y_test, q_test_cal, QUANTILES)
+    aci_l = _window_losses(y_test, q_test_aci, QUANTILES)
     np.savez_compressed(
         args.out_dir / f"{tag}_losses.npz",
         test_index=test_idx,
@@ -268,23 +303,30 @@ def main(argv=None) -> dict:
         ae=raw["ae"],
         crps_cqr=cal_l["crps"],
         ae_cqr=cal_l["ae"],
+        crps_aci=aci_l["crps"],
+        ae_aci=aci_l["ae"],
     )
-    if args.save_preds:
+    if not args.no_preds:
+        f32 = np.float32
         np.savez_compressed(
             args.out_dir / f"{tag}_preds.npz",
-            y_test=y_test,
-            q_test=q_test,
-            q_test_cqr=q_test_cal,
+            val_index=val_idx,
+            y_val=y_val.astype(f32),
+            q_val=q_val.astype(f32),
             test_index=test_idx,
+            y_test=y_test.astype(f32),
+            q_test=q_test.astype(f32),
+            quantiles=np.asarray(QUANTILES),
         )
     m = result["metrics"]
     logger.info(
-        "%s: test MAE %.4f CRPS %.4f cov80 %.3f -> CQR cov80 %.3f",
+        "%s: test MAE %.4f CRPS %.4f cov80 %.3f, CQR %.3f, ACI %.3f",
         tag,
         m["test"]["mae"],
         m["test"]["crps_q"],
         m["test"]["coverage_80"],
         m["test_cqr"]["coverage_80"],
+        m["test_aci"]["coverage_80"],
     )
     logger.info("wrote %s", path)
     return result

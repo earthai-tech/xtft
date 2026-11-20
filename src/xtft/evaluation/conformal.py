@@ -1,12 +1,19 @@
-r"""Split-conformal calibration of quantile forecasts (CQR).
+r"""Conformal calibration of quantile forecasts.
 
 Quantile regressors, XTFT included, are fitted by minimising the
 pinball loss, which gives no finite-sample guarantee that an
-interval :math:`[\\hat q_{\tau}, \\hat q_{1-\tau}]` covers
+interval :math:`[\hat q_{\tau}, \hat q_{1-\tau}]` covers
 :math:`1 - 2\tau` of new observations. Conformalized quantile
 regression (CQR) [1]_ corrects each interval with a margin
 estimated on held-out data, restoring the nominal coverage under
-exchangeability.
+exchangeability (:class:`ConformalQuantileCalibrator`).
+
+Forecast errors are not exchangeable when the series drifts: a
+margin estimated on the validation period can be far too wide or
+too narrow on the test period. :class:`AdaptiveConformalCalibrator`
+re-estimates the margins causally as outcomes arrive, with the
+adaptive conformal inference update of Gibbs and Candes [3]_ and an
+optional sliding window of recent scores.
 
 References
 ----------
@@ -17,6 +24,9 @@ References
    Quantile and probability curves without crossing.
    Econometrica, 78(3), 1093-1125.
    https://doi.org/10.3982/ECTA7880
+.. [3] Gibbs, I. and Candes, E. (2021). Adaptive conformal inference
+   under distribution shift. Advances in Neural Information
+   Processing Systems 34 (NeurIPS 2021).
 """
 
 from __future__ import annotations
@@ -30,7 +40,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from .metrics import _levels, interval_pairs
 
-__all__ = ["ConformalQuantileCalibrator", "conformal_margin"]
+__all__ = [
+    "AdaptiveConformalCalibrator",
+    "ConformalQuantileCalibrator",
+    "conformal_margin",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -274,3 +288,334 @@ class ConformalQuantileCalibrator:
     ) -> NDArray[np.float64]:
         """Fit on the given data and return calibrated forecasts."""
         return self.fit(y_true, y_quant).transform(y_quant)
+
+
+def _rank_select(scores: NDArray, alpha: float) -> float:
+    """Conformal quantile with the rank clipped to ``[1, n]``."""
+    n = scores.size
+    rank = math.ceil((n + 1) * (1.0 - alpha))
+    rank = min(max(rank, 1), n)
+    return float(np.partition(scores, rank - 1)[rank - 1])
+
+
+class AdaptiveConformalCalibrator:
+    r"""Causal, shift-adaptive conformal calibration of quantiles.
+
+    Starts from the CQR scores of a calibration (validation)
+    period, then walks through the forecast origins in time order.
+    At each origin the interval margins are computed only from the
+    scores of targets already observed; once a target is observed,
+    its score joins the score buffer and the working miscoverage
+    level is updated with the adaptive conformal inference (ACI)
+    rule [1]_. Margins therefore follow a change in the error
+    distribution instead of keeping the validation-period value.
+
+    Parameters
+    ----------
+    quantiles : sequence of float
+        Levels of the last forecast axis, strictly increasing in
+        ``(0, 1)``. Symmetric pairs :math:`(\tau, 1 - \tau)` are
+        calibrated; other levels are left unchanged.
+    gamma : float, default=0.005
+        ACI step size :math:`\gamma \ge 0`; 0 keeps the nominal
+        level and adapts through the score window only.
+    window : int or None, default=None
+        Keep only the most recent `window` scores per horizon step
+        (validation scores first, then observed test scores);
+        ``None`` keeps all of them.
+    per_horizon : bool, default=True
+        One score buffer and one level per forecast step; if
+        ``False``, all steps share them.
+
+    Attributes
+    ----------
+    origin_times_ : numpy.ndarray
+        Sorted distinct origin times seen by :meth:`transform`.
+    alpha_path_ : dict of (int, int) to numpy.ndarray
+        Working miscoverage level used at each origin, shape
+        ``(n_origins, G)`` with ``G = H`` if `per_horizon` else 1.
+    margins_ : dict of (int, int) to numpy.ndarray
+        Margin applied to each forecast, shape ``(N, H)``.
+
+    Raises
+    ------
+    ValueError
+        If `gamma` is negative, `window` is not a positive integer,
+        or there is no symmetric quantile pair.
+
+    See Also
+    --------
+    ConformalQuantileCalibrator : Static split-conformal CQR.
+    conformal_margin : Finite-sample conformal quantile.
+
+    Notes
+    -----
+    For an interval with levels :math:`(\tau_\ell, \tau_u)` and
+    target miscoverage :math:`\alpha^{*} = 1 - (\tau_u -
+    \tau_\ell)`, the CQR score of forecast :math:`n` at step
+    :math:`h` is :math:`E_{n,h} = \max(\hat q_{\tau_\ell} - y,\;
+    y - \hat q_{\tau_u})`. Forecast :math:`n` is issued at origin
+    :math:`t_n` and its step :math:`h` (0-based) targets time
+    :math:`t_n + h + 1`. At an origin :math:`t`, with
+    :math:`\mathcal{E}_h(t)` the buffered scores of step :math:`h`
+    whose targets are at or before :math:`t` (calibration scores
+    included) and :math:`n_h` their number, the margin
+    :math:`\hat Q` is the
+    :math:`\lceil (n_h + 1)(1 - \alpha_{h}) \rceil`-th smallest
+    score in :math:`\mathcal{E}_h(t)`, and the interval is
+    :math:`[\hat q_{\tau_\ell} - \hat Q,\; \hat q_{\tau_u} +
+    \hat Q]`. When the target of :math:`(n, h)` is observed, with
+    :math:`\mathrm{err} = \mathbb{1}\{E_{n,h} > \hat Q_{n,h}\}`
+    for the margin :math:`\hat Q_{n,h}` it was issued with,
+
+    .. math::
+
+        \alpha_{h} \leftarrow \alpha_{h} + \gamma\,
+            (\alpha^{*} - \mathrm{err}),
+
+    so misses lower the level (wider intervals) and hits raise it.
+    Over :math:`T` updates, ACI bounds the gap between the
+    long-run miscoverage and :math:`\alpha^{*}` by
+    :math:`(\max(\alpha_1, 1 - \alpha_1) + \gamma)/(\gamma T)`
+    whatever the data [1]_. Here the rank is clipped to
+    :math:`[1, n_h]`: a level :math:`\alpha_h \le 0` gives the
+    largest buffered score instead of an infinite interval, and
+    :math:`\alpha_h \ge 1` the smallest instead of an empty one,
+    so the bound holds only while the level stays in
+    :math:`(0, 1)`. All windows sharing an origin are calibrated
+    with the same margins; outcomes become available exactly at
+    their target time (no reporting delay). After the margins are
+    applied the levels are sorted (monotone rearrangement), as in
+    :class:`ConformalQuantileCalibrator`.
+
+    The update costs :math:`O(1)` per observed target; computing
+    the margins costs :math:`O(\sum_h n_h)` per origin and
+    interval.
+
+    References
+    ----------
+    .. [1] Gibbs, I. and Candes, E. (2021). Adaptive conformal
+       inference under distribution shift. Advances in Neural
+       Information Processing Systems 34 (NeurIPS 2021).
+
+    Examples
+    --------
+    Validation errors have unit scale, test errors triple: the
+    static margin under-covers, the adaptive one recovers.
+
+    >>> import numpy as np
+    >>> from xtft.evaluation import (AdaptiveConformalCalibrator,
+    ...                              ConformalQuantileCalibrator)
+    >>> rng = np.random.default_rng(0)
+    >>> levels = [0.1, 0.5, 0.9]
+    >>> def flat(y):  # a forecaster unaware of the shift
+    ...     z = np.zeros_like(y)
+    ...     return np.stack([z - 1.28, z, z + 1.28], axis=-1)
+    >>> y_val = rng.normal(size=(300, 1))
+    >>> y_test = 3.0 * rng.normal(size=(600, 1))
+    >>> static = ConformalQuantileCalibrator(levels).fit(
+    ...     y_val, flat(y_val)).transform(flat(y_test))
+    >>> aci = AdaptiveConformalCalibrator(levels, gamma=0.02,
+    ...                                   window=100)
+    >>> adaptive = aci.fit(y_val, flat(y_val)).transform(
+    ...     y_test, flat(y_test), times=np.arange(600))
+    >>> def cover(q):
+    ...     inside = (y_test >= q[..., 0]) & (y_test <= q[..., 2])
+    ...     return float(inside.mean())
+    >>> cover(static) < 0.5, cover(adaptive) > 0.75
+    (True, True)
+    """
+
+    def __init__(
+        self,
+        quantiles: Sequence[float],
+        *,
+        gamma: float = 0.005,
+        window: int | None = None,
+        per_horizon: bool = True,
+    ) -> None:
+        if not gamma >= 0.0:
+            raise ValueError(f"gamma must be >= 0, got {gamma}.")
+        if window is not None and (
+            not isinstance(window, (int, np.integer)) or window < 1
+        ):
+            raise ValueError(
+                "window must be a positive int or None, got "
+                f"{window!r}."
+            )
+        self.quantiles = tuple(_levels(quantiles).tolist())
+        self.gamma = float(gamma)
+        self.window = None if window is None else int(window)
+        self.per_horizon = per_horizon
+        self.pairs = interval_pairs(self.quantiles)
+        if not self.pairs:
+            raise ValueError(
+                "No symmetric quantile pair (tau, 1 - tau) to "
+                f"calibrate in {self.quantiles}."
+            )
+
+    def _check(self, y: NDArray, q: NDArray) -> None:
+        if q.ndim != 3 or q.shape[-1] != len(self.quantiles):
+            raise ValueError(
+                "Forecasts must have shape (N, H, K) with "
+                f"K={len(self.quantiles)}, got {q.shape}."
+            )
+        if y.shape != q.shape[:-1]:
+            raise ValueError(
+                f"Target shape {y.shape} does not match forecast "
+                f"shape {q.shape}."
+            )
+
+    def fit(
+        self, y_true: ArrayLike, y_quant: ArrayLike
+    ) -> AdaptiveConformalCalibrator:
+        """Seed the score buffers with a calibration period.
+
+        Parameters
+        ----------
+        y_true : array_like
+            Calibration targets, shape ``(N, H)``; NaNs ignored.
+        y_quant : array_like
+            Calibration forecasts, shape ``(N, H, K)``.
+
+        Returns
+        -------
+        AdaptiveConformalCalibrator
+            The calibrator, ready for :meth:`transform`.
+
+        Raises
+        ------
+        ValueError
+            If the shapes disagree or a horizon step has no finite
+            calibration score.
+        """
+        y = np.asarray(y_true, dtype=float)
+        q = np.asarray(y_quant, dtype=float)
+        self._check(y, q)
+        self.horizon_ = q.shape[1]
+        self._seed = {}
+        for i, j, _ in self.pairs:
+            scores = np.maximum(q[..., i] - y, y - q[..., j])
+            if not self.per_horizon:
+                scores = scores.reshape(-1, 1)
+            seeds = []
+            for g in range(scores.shape[1]):
+                col = scores[:, g]
+                col = col[np.isfinite(col)]
+                if col.size == 0:
+                    raise ValueError(
+                        f"No finite calibration score at step {g}."
+                    )
+                seeds.append(col.tolist())
+            self._seed[(i, j)] = seeds
+        return self
+
+    def transform(
+        self,
+        y_true: ArrayLike,
+        y_quant: ArrayLike,
+        times: ArrayLike,
+    ) -> NDArray[np.float64]:
+        """Calibrate forecasts causally along their origins.
+
+        Parameters
+        ----------
+        y_true : array_like
+            Targets of the forecasts, shape ``(N, H)``. Each value
+            is used only after its target time, to update the
+            margins of later origins; NaNs give no update.
+        y_quant : array_like
+            Forecasts, shape ``(N, H, K)``, with the `H` of
+            :meth:`fit`.
+        times : array_like
+            Integer origin time of each forecast, shape ``(N,)``,
+            in steps of the series; step ``h`` (0-based) of
+            forecast ``n`` targets ``times[n] + h + 1``.
+
+        Returns
+        -------
+        numpy.ndarray
+            Calibrated, sorted quantiles, shape ``(N, H, K)``; the
+            inputs are not modified.
+
+        Raises
+        ------
+        RuntimeError
+            If called before :meth:`fit`.
+        ValueError
+            If the shapes disagree with each other or with
+            :meth:`fit`.
+        """
+        if not hasattr(self, "_seed"):
+            raise RuntimeError("Call fit() before transform().")
+        y = np.asarray(y_true, dtype=float)
+        q = np.array(y_quant, dtype=float, copy=True)
+        self._check(y, q)
+        t = np.asarray(times)
+        n, horizon = y.shape
+        if t.shape != (n,):
+            raise ValueError(f"times must have shape ({n},).")
+        if horizon != self.horizon_:
+            raise ValueError(
+                f"Fitted for horizon {self.horizon_}, got {horizon}."
+            )
+        groups = horizon if self.per_horizon else 1
+        group_of = (
+            np.arange(horizon)
+            if self.per_horizon
+            else np.zeros(horizon, dtype=int)
+        )
+
+        # Observation events, in order of target time.
+        rows, steps = np.nonzero(np.isfinite(y))
+        target = t[rows] + steps + 1
+        order = np.argsort(target, kind="stable")
+        rows, steps, target = rows[order], steps[order], target[order]
+
+        alpha0 = {(i, j): 1.0 - nom for i, j, nom in self.pairs}
+        alpha = {p: np.full(groups, a) for p, a in alpha0.items()}
+        buffers = {
+            p: [list(s) for s in seeds]
+            for p, seeds in self._seed.items()
+        }
+        scores = {
+            (i, j): np.maximum(q[..., i] - y, y - q[..., j])
+            for i, j, _ in self.pairs
+        }
+        issued = {p: np.full((n, horizon), np.nan) for p in alpha}
+        origins = np.unique(t)
+        path = {p: np.empty((origins.size, groups)) for p in alpha}
+
+        ptr = 0
+        for k, now in enumerate(origins):
+            # Targets observed by `now` were forecast at earlier
+            # origins, so their issued margins already exist.
+            while ptr < target.size and target[ptr] <= now:
+                r, h = rows[ptr], steps[ptr]
+                g = group_of[h]
+                for p in alpha:
+                    s = scores[p][r, h]
+                    err = float(s > issued[p][r, h])
+                    alpha[p][g] += self.gamma * (alpha0[p] - err)
+                    buffers[p][g].append(s)
+                ptr += 1
+            here = np.flatnonzero(t == now)
+            for p in alpha:
+                margin = np.empty(groups)
+                for g in range(groups):
+                    buf = buffers[p][g]
+                    if self.window is not None:
+                        buf = buf[-self.window :]
+                    margin[g] = _rank_select(
+                        np.asarray(buf), alpha[p][g]
+                    )
+                issued[p][here] = margin[group_of]
+                path[p][k] = alpha[p]
+
+        for (i, j), m in issued.items():
+            q[..., i] -= m
+            q[..., j] += m
+        self.origin_times_ = origins
+        self.alpha_path_ = path
+        self.margins_ = issued
+        return np.sort(q, axis=-1)
