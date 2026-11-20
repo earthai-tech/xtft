@@ -66,6 +66,34 @@ pip install -e ".[torch,dev]"
 Add `tf` to the extras for the Keras backend and `bench` for the
 benchmark baselines.
 
+## Calibrated intervals
+
+```python
+from xtft.evaluation import (
+    ConformalQuantileCalibrator, evaluate_quantile_forecast)
+
+cal = ConformalQuantileCalibrator(quantiles).fit(y_val, q_val)
+q_test_cal = cal.transform(q_test)   # CQR, one margin per step
+evaluate_quantile_forecast(y_test, q_test_cal, quantiles)
+# -> pinball, crps_q, mae, rmse, coverage_80, winkler_80, ...
+```
+
+Both work on NumPy arrays of any model, so baselines are scored
+and calibrated with the same code.
+
+## Benchmarks
+
+```powershell
+python benchmarks/run.py --dataset ETTh1 --model xtft --horizon 96
+python benchmarks/run.py --dataset ETTh1 --model nf:PatchTST --horizon 96
+python benchmarks/aggregate.py results --metric crps_q
+```
+
+Models: `xtft`, any neuralforecast model as `nf:<Name>`, any
+statsforecast model as `sf:<Name>`. On the HPC, generate a task
+list with `benchmarks/make_tasks.py` and submit
+`jobs/bench_array.sbatch` as a SLURM array.
+
 ## Layout
 
 ```
@@ -73,10 +101,12 @@ src/xtft/
   backends/     framework switch (torch / tensorflow); array/ backends
   compat/       version shims: numpy, pandas, scipy, sklearn, tf, torch
   nn/           models resolved for the active backend
-    torch/      PyTorch implementation (reference)
+    torch/      PyTorch implementation (reference) and trainer
     tf/         Keras implementation ported from fusionlab-learn
+  data/         panel data, chronological splits, rolling windows
+  evaluation/   probabilistic metrics, conformal calibration
   api/ core/ utils/ metrics/ decorators.py exceptions.py
-benchmarks/     configs, runners, baseline adapters, statistics
+benchmarks/     dataset registry, model adapters, runner, aggregation
 experiments/    ablations, Nansha/Zhongshan case study
 jobs/           SLURM scripts for the HPC
 paper/          manuscript and editable figure folders

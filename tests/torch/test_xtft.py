@@ -207,3 +207,49 @@ def test_num_parameters_counts_trainables():
     model.head.proj.weight.requires_grad_(False)
     assert model.num_parameters() < total
     assert model.num_parameters(trainable_only=False) == total
+
+
+@pytest.mark.parametrize("quantiles", [LEVELS, None])
+@pytest.mark.parametrize("output_dim", [1, 2])
+def test_instance_norm_is_affine_equivariant(quantiles, output_dim):
+    # Target-only history: shifting and scaling it (a > 0) must
+    # shift and scale every quantile the same way.
+    model = make_model(
+        s=0,
+        d=output_dim,
+        f=0,
+        quantiles=quantiles,
+        output_dim=output_dim,
+        instance_norm=True,
+    ).eval()
+    _, xd, _ = make_inputs(s=0, d=output_dim, f=0)
+    a, b = 3.5, -12.0
+    with torch.no_grad():
+        base = model(None, xd, None)
+        moved = model(None, a * xd + b, None)
+    torch.testing.assert_close(
+        moved, a * base + b, rtol=1e-4, atol=1e-4
+    )
+
+
+def test_instance_norm_keeps_quantiles_ordered():
+    model = make_model(quantiles=LEVELS, instance_norm=True).eval()
+    xs, xd, xf = make_inputs()
+    with torch.no_grad():
+        q = model(xs, 100.0 + 50.0 * xd, xf)
+    assert torch.all(q[..., 1:] >= q[..., :-1])
+
+
+def test_instance_norm_flat_window_is_finite():
+    model = make_model(
+        s=0, d=1, f=0, quantiles=LEVELS, instance_norm=True
+    ).eval()
+    xd = torch.full((B, T, 1), 7.0)
+    with torch.no_grad():
+        q = model(None, xd, None)
+    assert torch.isfinite(q).all()
+
+
+def test_instance_norm_needs_target_channels():
+    with pytest.raises(ValueError, match="instance_norm"):
+        make_model(d=1, output_dim=2, instance_norm=True)

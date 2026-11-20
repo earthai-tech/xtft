@@ -1,0 +1,70 @@
+{
+  "config": {
+    "batch": 64,
+    "horizon": 24,
+    "static": 5,
+    "dynamic": 8,
+    "future": 4,
+    "width": 64,
+    "heads": 4,
+    "scales": [
+      1,
+      2,
+      4
+    ]
+  },
+  "threads": 28,
+  "warmup": 3,
+  "repeats": 10,
+  "host": "wombele180.bullx",
+  "results": [
+    {
+      "backend": "torch",
+      "steps": 16,
+      "params": 672968,
+      "train_step_s": 0.0815794764785096,
+      "inference_s": 0.017338250414468348,
+      "status": "ok"
+    },
+    {
+      "backend": "keras",
+      "steps": 16,
+      "params": 760552,
+      "train_step_s": 0.3049220476532355,
+      "inference_s": 0.267691764049232,
+      "status": "ok"
+    },
+    {
+      "backend": "torch",
+      "steps": 64,
+      "params": 672968,
+      "train_step_s": 0.11842620943207294,
+      "inference_s": 0.028909652959555387,
+      "status": "ok"
+    },
+    {
+      "backend": "keras",
+      "steps": 64,
+      "params": 760552,
+      "train_step_s": 0.6595071391202509,
+      "inference_s": 0.6176353645278141,
+      "status": "ok"
+    },
+    {
+      "backend": "torch",
+      "steps": 168,
+      "params": 672968,
+      "train_step_s": 0.22633412445429713,
+      "inference_s": 0.052445355569943786,
+      "status": "ok"
+    },
+    {
+      "backend": "keras",
+      "steps": 168,
+      "params": 760552,
+      "train_step_s": 1.4246108370134607,
+      "inference_s": 1.3761239636223763,
+      "status": "ok"
+    }
+  ]
+}

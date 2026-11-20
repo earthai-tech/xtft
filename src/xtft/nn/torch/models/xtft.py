@@ -52,6 +52,9 @@ from ..probabilistic import NonCrossingQuantileHead
 
 __all__ = ["XTFT"]
 
+# Variance floor of the instance normalisation (flat windows).
+_NORM_EPS = 1e-5
+
 
 def _shape_of(x: Tensor | None) -> tuple[int, ...] | None:
     """Return ``tuple(x.shape)``, or ``None`` if `x` is missing."""
@@ -115,6 +118,13 @@ class XTFT(nn.Module):
         attention, in original steps.
     dropout : float, default=0.1
         Dropout probability, in ``[0, 1)``.
+    instance_norm : bool, default=False
+        Standardise the target history of each window by its own
+        mean and standard deviation and map the forecast back
+        (reversible instance normalisation [1]_). Requires the
+        first `output_dim` channels of `x_dynamic` to be the past
+        targets. Use it for non-stationary series whose level
+        drifts outside the training range.
 
     Attributes
     ----------
@@ -182,6 +192,23 @@ class XTFT(nn.Module):
     *targets* are handled by
     :func:`~xtft.nn.torch.probabilistic.pinball_loss`.
 
+    With `instance_norm`, the target channels :math:`y_t \in
+    \mathbb{R}^{O}` of the history are replaced by
+    :math:`(y_t - \mu) / \sigma` with :math:`\mu` and
+    :math:`\sigma^2 + \epsilon` the per-window mean and variance
+    over :math:`t = 0, \dots, T-1` (:math:`\epsilon = 10^{-5}`),
+    and the output becomes :math:`\mu + \sigma \hat q_\tau`. The
+    map is increasing, so the quantiles still do not cross; the
+    loss is computed on the restored scale.
+
+    References
+    ----------
+    .. [1] Kim, T., Kim, J., Tae, Y., Park, C., Choi, J.-H. and
+       Choo, J. (2022). Reversible instance normalization for
+       accurate time-series forecasting against distribution
+       shift. *International Conference on Learning
+       Representations (ICLR)*.
+
     Examples
     --------
     >>> import torch
@@ -222,6 +249,7 @@ class XTFT(nn.Module):
         local_window: float = 8.0,
         cross_window: float = 16.0,
         dropout: float = 0.1,
+        instance_norm: bool = False,
     ) -> None:
         super().__init__()
         for name, value, low in (
@@ -251,7 +279,15 @@ class XTFT(nn.Module):
                 f"hidden_units={hidden_units} is not divisible by "
                 f"num_heads={num_heads}."
             )
+        if instance_norm and output_dim > dynamic_input_dim:
+            raise ValueError(
+                "instance_norm needs the output_dim target channels "
+                "at the start of x_dynamic, but output_dim="
+                f"{output_dim} > dynamic_input_dim="
+                f"{dynamic_input_dim}."
+            )
         d = hidden_units
+        self.instance_norm = bool(instance_norm)
         self.static_input_dim = static_input_dim
         self.dynamic_input_dim = dynamic_input_dim
         self.future_input_dim = future_input_dim
@@ -450,6 +486,18 @@ class XTFT(nn.Module):
             c_enr = self.ctx_enrich(z_static)
             c_state = self.ctx_state(z_static)
 
+        if self.instance_norm:
+            o = self.output_dim
+            target = x_dynamic[..., :o]
+            mu = target.mean(dim=1, keepdim=True)  # (B, 1, O)
+            sigma = torch.sqrt(
+                target.var(dim=1, keepdim=True, unbiased=False)
+                + _NORM_EPS
+            )
+            x_dynamic = torch.cat(
+                [(target - mu) / sigma, x_dynamic[..., o:]], dim=-1
+            )
+
         past = x_dynamic
         if past_known is not None:
             past = torch.cat([x_dynamic, past_known], dim=-1)
@@ -478,7 +526,11 @@ class XTFT(nn.Module):
         enriched = self.enrich(decoded, c_enr)
         fused, scale_attr = self.cross_scale(enriched, memories)
         out = self.output_skip(self.output_grn(fused), decoded)
-        forecast = self.head(out)
+        forecast = self.head(out)  # (B, H, O, K) or (B, H, O)
+        if self.instance_norm:
+            if self.quantiles is not None:
+                mu, sigma = mu[..., None], sigma[..., None]
+            forecast = mu + sigma * forecast
         if self.quantiles is not None and self.output_dim == 1:
             forecast = forecast.squeeze(-2)
 

@@ -41,7 +41,9 @@ Status: 2026-11-20. Origin: TPAMI-2025-04-1034 rejected on
    learned window, then cross-scale attention with scale
    attribution).
 3. Non-crossing quantile head (done) plus conformalized quantile
-   regression (to do).
+   regression (done: `xtft.evaluation.ConformalQuantileCalibrator`,
+   per-horizon CQR with monotone rearrangement; model-agnostic, so
+   baselines are calibrated identically).
 4. Measurable interpretability (done in the forward pass:
    variable weights, scale attribution, learned windows; analysis
    and plots to do).
@@ -53,9 +55,20 @@ at step 0, drops the newest observation unless `s` divides
 `W` steps; the Keras XTFT had no variable selection, and future
 covariates only entered the cross-attention embedding.
 
+5. Reversible instance normalisation (`instance_norm=True`, done
+   2026-11-20; on by default in the benchmark adapter, as the
+   neuralforecast baselines use `scaler_type="standard"`). Needed
+   on ETTh1, whose test period sits at -1.34 train standard
+   deviations with a third of the train spread: without it the
+   XTFT test MAE was 0.468, with it 0.186 (smoke budget). It costs
+   a little on stationary data (Synthetic CRPS 0.257 -> 0.272), so
+   a variant that feeds the window mean and log-scale back as
+   static inputs (keeping the level information) is worth an
+   ablation.
+
 Still to do on the model: scale suggestion from the periodogram,
-alternative encoders (TCN, patch) for the ablation, conformal
-calibration, `torch.compile` and GPU timing.
+alternative encoders (TCN, patch) for the ablation,
+`torch.compile` and GPU timing.
 
 ## Benchmarks (availability and licences to verify)
 
@@ -73,10 +86,56 @@ and XGBoost on lags; DeepAR, N-BEATS, N-HiTS, TFT, Informer,
 Autoformer, FEDformer, PatchTST, iTransformer, Crossformer, TimesNet,
 DLinear, TiDE, TSMixer; optional zero-shot Chronos and TimesFM.
 
-Protocol: five seeds, equal tuning budget, Diebold-Mariano tests,
-Friedman/Nemenyi critical-difference diagrams. Heavy runs on the
-HPC CPU nodes (env `sci` or a project env under
-`/SCRATCH/kouakloMI/envs/xtft`), never on the login node.
+Protocol (implemented in `benchmarks/run.py` and `xtft.data`):
+
+* chronological train / validation / test periods with each
+  dataset's conventional lengths;
+* models fitted on train, early stopping on validation;
+* forecasts at shared rolling origins, aligned to the series end
+  as neuralforecast and statsforecast do; windows straddling a
+  period boundary are dropped;
+* CQR fitted on validation forecasts, applied to test forecasts;
+  both raw and calibrated test metrics are reported;
+* metrics on train-standardised units plus MASE and MSIS
+  (seasonal scale), computed by `xtft.evaluation` for every model;
+* 11 quantile levels (0.05, 0.1, ..., 0.9, 0.95), so the CRPS
+  proxy and the 90/80/60/40/20% intervals are all available;
+* five seeds for learned models (statistical models are
+  deterministic: one run), Diebold-Mariano tests and
+  Friedman/Nemenyi critical-difference diagrams (to add).
+
+Harness: `benchmarks/datasets.py` (registry; `Synthetic` for smoke
+tests), `benchmarks/models.py` (adapters `xtft`, `nf:<Model>`,
+`sf:<Model>`), `benchmarks/make_tasks.py` (task list),
+`jobs/bench_array.sbatch` (SLURM array, 8 cores per task, at most
+20 concurrent), `benchmarks/aggregate.py` (tables and ranks).
+Results go to `/SCRATCH/kouakloMI/xtft/results/<array job id>`.
+
+Data checks (2026-11-20): `datasetsforecast` 1.1.0 gives ETTh1/h2
+the 15-minute split sizes (11520) and labels ECL 15-minute; the
+loader uses the 12/4/4-month ETTh split (8640/2880/2880) and infers
+the frequency from the time stamps (ECL is hourly). ETTh1 and ETTh2
+there are the univariate oil-temperature series (1 series); ETTm
+have 7.
+
+Smoke run (job 106507, 2026-11-20; 250 steps or 5 x 50 epochs,
+H=96 on ETTh1, H=24 on Synthetic): harness end to end for xtft,
+nf:TFT/PatchTST/NHITS/DLinear and sf:SeasonalNaive/AutoETS. Points
+for the full runs:
+
+* validation-to-test shift on ETTh1 makes CQR unreliable there
+  (AutoETS coverage 0.94 -> 0.35 after CQR); with stride H there
+  are only 30 calibration windows. Report raw and CQR metrics,
+  consider a smaller validation stride, and discuss the
+  exchangeability assumption;
+* neuralforecast TFT is slow on CPU (833 s vs 42 s for XTFT on
+  Synthetic at default sizes; not parameter-matched) - budget its
+  array tasks with longer time limits.
+
+Equal tuning budget: same input size, horizon, max epochs or
+steps and early-stopping patience for all learned models;
+per-model hyperparameters stay at their library defaults unless a
+search with the same budget is run for every model.
 
 ## Work phases
 
@@ -85,8 +144,11 @@ HPC CPU nodes (env `sci` or a project env under
    `tests/torch`); speed against the Keras XTFT in
    `benchmarks/speed/compare_xtft.py`. Remaining items listed
    under "Method changes".
-3. Probabilistic metrics module and data loaders with checksums.
-4. Benchmark harness, baseline adapters, SLURM job templates.
+3. Probabilistic metrics, conformal calibration, panel data
+   handling and trainer (done, 2026-11-20).
+4. Benchmark harness, baseline adapters, SLURM job templates
+   (done for long-horizon datasets; covariate-rich datasets and
+   statistical tests to add).
 5. Runs, ablations, statistics.
 6. Nansha/Zhongshan case study.
 7. Manuscript and figures (editable figure folders).

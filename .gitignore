@@ -8,8 +8,9 @@ dist/
 .ipynb_checkpoints/
 *.log
 # data, checkpoints and run outputs stay out of git
-data/
-results/
+/data/
+lightning_logs/
+/results/
 runs/
 checkpoints/
 *.npz
