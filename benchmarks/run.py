@@ -190,6 +190,11 @@ def main(argv=None) -> dict:
     )
     ap.add_argument("--threads", type=int, default=None)
     ap.add_argument(
+        "--no-covariates",
+        action="store_true",
+        help="drop static, past and known covariates (ablation)",
+    )
+    ap.add_argument(
         "--tag",
         default="",
         help="suffix for the output names (model variants)",
@@ -247,6 +252,8 @@ def main(argv=None) -> dict:
     started = time.perf_counter()
 
     data = load(args.dataset)
+    if args.no_covariates:
+        data.static, data.past, data.known = (), (), ()
     if args.max_series:
         keep = sorted(data.df["unique_id"].unique())[: args.max_series]
         data.df = data.df[data.df["unique_id"].isin(keep)]
@@ -351,6 +358,11 @@ def main(argv=None) -> dict:
         "dataset": args.dataset,
         "model": args.model,
         "tag": args.tag,
+        "covariates": {
+            "static": list(data.static),
+            "past": list(data.past),
+            "known": list(data.known),
+        },
         "horizon": h,
         "input_size": t_in,
         "stride": stride,

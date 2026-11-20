@@ -38,21 +38,49 @@ def _label(res: dict) -> str:
     return label
 
 
-def collect(roots: list[Path]) -> pd.DataFrame:
-    rows = []
-    paths = sorted(p for r in roots for p in r.rglob("*.json"))
-    for path in paths:
+def _runs(roots: list[Path], need_losses: bool = False) -> dict:
+    """Newest result file per run, keyed by run identity.
+
+    A run is (dataset, horizon, label, seed). When a run was repeated
+    (e.g. a rerun in a later array job), the most recently written
+    file wins, so seeds are never counted twice. With `need_losses`,
+    only runs with a ``_losses.npz`` file are considered.
+    """
+    found = {}
+    for path in (p for r in roots for p in r.rglob("*.json")):
+        if (
+            need_losses
+            and not path.with_name(
+                path.name[: -len(".json")] + "_losses.npz"
+            ).exists()
+        ):
+            continue
         try:
             res = json.loads(path.read_text())
         except json.JSONDecodeError:
             continue
         if "metrics" not in res:
             continue
+        key = (
+            res["dataset"],
+            res["horizon"],
+            _label(res),
+            res["seed"],
+        )
+        mtime = path.stat().st_mtime
+        if key not in found or mtime > found[key][0]:
+            found[key] = (mtime, path, res)
+    return {k: (p, r) for k, (_, p, r) in found.items()}
+
+
+def collect(roots: list[Path]) -> pd.DataFrame:
+    rows = []
+    for (_, _, label, _), (_, res) in sorted(_runs(roots).items()):
         for split, metrics in res["metrics"].items():
             rows.append(
                 {
                     "dataset": res["dataset"],
-                    "model": _label(res),
+                    "model": label,
                     "horizon": res["horizon"],
                     "seed": res["seed"],
                     "split": split,
@@ -84,16 +112,15 @@ def dm_table(
     """
     rows = []
     files = {}
-    losses = (p for r in roots for p in r.rglob("*_losses.npz"))
-    for path in losses:
+    runs = _runs(roots, need_losses=True)
+    for (dataset, horizon, label, _), (path, res) in runs.items():
         # Not with_suffix: tags such as "_missb0.3" contain dots.
-        stem = path.name[: -len("_losses.npz")]
-        res_path = path.with_name(stem + ".json")
-        if not res_path.exists():
-            continue
-        res = json.loads(res_path.read_text())
-        task = (res["dataset"], res["horizon"], _label(res))
-        files.setdefault(task, []).append((path, res))
+        loss_path = path.with_name(
+            path.name[: -len(".json")] + "_losses.npz"
+        )
+        files.setdefault((dataset, horizon, label), []).append(
+            (loss_path, res)
+        )
     tasks = {(d, h) for d, h, _ in files}
     for d, h in sorted(tasks):
         if (d, h, reference) not in files:
