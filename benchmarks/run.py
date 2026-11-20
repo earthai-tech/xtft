@@ -40,7 +40,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from datasets import load  # noqa: E402
+from datasets import forward_fill, inject_missing, load  # noqa: E402
 from models import RunContext, make_model  # noqa: E402
 
 from xtft.data import PanelData, PanelSpec, WindowDataset  # noqa: E402
@@ -139,11 +139,38 @@ def main(argv=None) -> dict:
         "--model-kw", default="{}", help="JSON dict of model overrides"
     )
     ap.add_argument("--threads", type=int, default=None)
+    ap.add_argument(
+        "--tag",
+        default="",
+        help="suffix for the output names (model variants)",
+    )
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
     ap.add_argument(
         "--no-preds",
         action="store_true",
         help="do not save the validation and test forecasts",
+    )
+    ap.add_argument(
+        "--missing-rate",
+        type=float,
+        default=0.0,
+        help="fraction of target values removed (gap study)",
+    )
+    ap.add_argument(
+        "--missing-mode",
+        choices=("random", "blocks"),
+        default="random",
+    )
+    ap.add_argument(
+        "--ffill-all",
+        action="store_true",
+        help="give every model, XTFT included, forward-filled gaps",
+    )
+    ap.add_argument(
+        "--missing-block",
+        type=int,
+        default=24,
+        help="mean gap length in steps for --missing-mode blocks",
     )
     ap.add_argument(
         "--aci-gamma",
@@ -176,13 +203,38 @@ def main(argv=None) -> dict:
     spec = PanelSpec(
         static=data.static, past=data.past, known=data.known
     )
-    panel = PanelData.from_frame(data.df, spec)
+    clean = None
+    if args.missing_rate > 0:
+        # Models train and calibrate on the gapped series, as a
+        # practitioner would; test scores use the clean values.
+        # XTFT receives the gaps as NaN, the other models the
+        # usual forward-filled series.
+        clean = PanelData.from_frame(data.df, spec)
+        gapped = inject_missing(
+            data.df,
+            args.missing_rate,
+            mode=args.missing_mode,
+            block=args.missing_block,
+            seed=args.seed,
+        )
+        data.df = forward_fill(gapped)
+        panel = PanelData.from_frame(
+            data.df if args.ffill_all else gapped, spec
+        )
+    else:
+        panel = PanelData.from_frame(data.df, spec)
     lengths = np.array([len(t) for t in panel.times])
     test_start = lengths - data.test_size
     val_start = test_start - data.val_size
     if np.any(val_start <= args.input_size + args.horizon):
         raise ValueError("Train period too short for these sizes.")
     panel.fit_scaling(val_start)
+    if clean is not None:
+        # Clean targets in the units of the gapped panel.
+        for i, y in enumerate(clean.target):
+            clean.target[i] = (
+                (y - panel.loc[i]) / panel.scale[i]
+            ).astype(y.dtype)
 
     h, t_in = args.horizon, args.input_size
     stride = args.stride or h
@@ -231,7 +283,8 @@ def main(argv=None) -> dict:
     predict_s = time.perf_counter() - t0
 
     y_val = _targets(panel, val_idx, t_in, h)
-    y_test = _targets(panel, test_idx, t_in, h)
+    truth = panel if clean is None else clean
+    y_test = _targets(truth, test_idx, t_in, h)
     scales = _seasonal_scales(panel, val_start, data.season)
     cal = ConformalQuantileCalibrator(QUANTILES).fit(y_val, q_val)
     q_test_cal = cal.transform(q_test)
@@ -247,6 +300,7 @@ def main(argv=None) -> dict:
     result = {
         "dataset": args.dataset,
         "model": args.model,
+        "tag": args.tag,
         "horizon": h,
         "input_size": t_in,
         "stride": stride,
@@ -260,6 +314,12 @@ def main(argv=None) -> dict:
         },
         "quantiles": QUANTILES,
         "aci": {"gamma": args.aci_gamma, "window": args.aci_window},
+        "missing": {
+            "rate": args.missing_rate,
+            "mode": args.missing_mode,
+            "block": args.missing_block,
+            "ffill_all": args.ffill_all,
+        },
         "metrics": {
             "val": _metrics(
                 y_val, q_val, QUANTILES, scales[val_idx[:, 0]]
@@ -288,6 +348,10 @@ def main(argv=None) -> dict:
         f"{args.dataset}_{args.model.replace(':', '-')}_H{h}"
         f"_T{t_in}_s{args.seed}"
     )
+    if args.missing_rate > 0:
+        tag += f"_miss{args.missing_mode[0]}{args.missing_rate:g}"
+    if args.tag:
+        tag += f"_{args.tag}"
     args.out_dir.mkdir(parents=True, exist_ok=True)
     path = args.out_dir / f"{tag}.json"
     path.write_text(json.dumps(result, indent=2, default=float))

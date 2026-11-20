@@ -28,13 +28,20 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
-__all__ = ["BenchmarkData", "available", "load"]
+__all__ = [
+    "BenchmarkData",
+    "available",
+    "forward_fill",
+    "inject_missing",
+    "load",
+]
 
 # Seasonal period per sampling frequency (for seasonal naive,
 # ETS and the MASE/MSIS scale).
@@ -242,3 +249,56 @@ def load(name: str) -> BenchmarkData:
         data.test_size,
     )
     return data
+
+
+def inject_missing(
+    df: pd.DataFrame,
+    rate: float,
+    *,
+    mode: str = "random",
+    block: int = 24,
+    seed: int = 0,
+    column: str = "y",
+) -> pd.DataFrame:
+    """Return a copy of `df` with values of `column` set to NaN.
+
+    ``mode="random"`` drops each value independently with
+    probability `rate`; ``mode="blocks"`` drops contiguous gaps of
+    geometric length (mean `block` steps) until a fraction `rate`
+    of each series is missing, as in sensor outages. The pattern
+    depends only on `seed` and the series order, so every model of
+    a benchmark cell sees the same gaps.
+    """
+    if not 0.0 <= rate < 1.0:
+        raise ValueError(f"rate must be in [0, 1), got {rate}.")
+    if mode not in ("random", "blocks"):
+        raise ValueError(f"Unknown mode {mode!r}.")
+    out = df.sort_values(["unique_id", "ds"]).reset_index(drop=True)
+    rng = np.random.default_rng(seed)
+    values = out[column].to_numpy(dtype=float, copy=True)
+    for _, rows in out.groupby("unique_id", sort=True).indices.items():
+        n = rows.size
+        if mode == "random":
+            drop = rng.random(n) < rate
+        else:
+            drop = np.zeros(n, dtype=bool)
+            while drop.mean() < rate:
+                start = rng.integers(n)
+                length = rng.geometric(1.0 / block)
+                drop[start : start + length] = True
+        values[rows[drop]] = np.nan
+    out[column] = values
+    return out
+
+
+def forward_fill(df: pd.DataFrame, column: str = "y") -> pd.DataFrame:
+    """Impute gaps by the last observation (leading gaps: next one).
+
+    The usual preprocessing for models that cannot take missing
+    values; causal except for gaps at the very start of a series.
+    """
+    out = df.copy()
+    grouped = out.groupby("unique_id", sort=False)[column]
+    out[column] = grouped.ffill()
+    out[column] = out.groupby("unique_id", sort=False)[column].bfill()
+    return out

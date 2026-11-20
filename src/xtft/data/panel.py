@@ -470,6 +470,10 @@ class WindowDataset:
         History length :math:`T`.
     horizon : int
         Forecast horizon :math:`H`.
+    fill_value : float or None, default=0.0
+        Value replacing missing past and known inputs; ``None``
+        keeps them as ``NaN`` for a model that handles missing
+        values itself (XTFT with ``missing=True``).
 
     Notes
     -----
@@ -478,9 +482,10 @@ class WindowDataset:
     ``(T, O + D)`` holding targets and observed covariates at
     :math:`t_0 - T + 1, \dots, t_0`; ``future`` ``(T + H, F)``
     holding known covariates up to :math:`t_0 + H`; ``y``
-    ``(H, O)``. Missing past targets are filled with 0 (the
-    train mean after scaling) because the network cannot take NaN
-    inputs; missing future targets stay NaN for the loss to skip.
+    ``(H, O)``. Missing past and known inputs are replaced by
+    `fill_value` (0 is the train mean after scaling) unless it is
+    ``None``; missing future targets always stay NaN for the loss
+    to skip.
     The item works with ``torch.utils.data.DataLoader`` and its
     default collate function.
 
@@ -504,9 +509,11 @@ class WindowDataset:
         index: NDArray[np.int64],
         input_size: int,
         horizon: int,
+        fill_value: float | None = 0.0,
     ) -> None:
         if input_size < 1 or horizon < 1:
             raise ValueError("input_size and horizon must be >= 1.")
+        self.fill_value = fill_value
         self.panel = panel
         self.index = np.asarray(index, dtype=np.int64).reshape(-1, 2)
         self.input_size = input_size
@@ -530,11 +537,13 @@ class WindowDataset:
         past = np.concatenate(
             [p.target[i][lo:hi], p.past[i][lo:hi]], axis=1
         )
+        future = p.known[i][lo : hi + self.horizon]
+        if self.fill_value is not None:
+            past = np.nan_to_num(past, nan=self.fill_value)
+            future = np.nan_to_num(future, nan=self.fill_value)
         return {
             "static": p.static[i],
-            "past": np.nan_to_num(past, nan=0.0),
-            "future": np.nan_to_num(
-                p.known[i][lo : hi + self.horizon], nan=0.0
-            ),
+            "past": past,
+            "future": future,
             "y": p.target[i][hi : hi + self.horizon],
         }

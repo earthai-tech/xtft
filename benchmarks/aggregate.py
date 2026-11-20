@@ -27,6 +27,17 @@ import pandas as pd
 from xtft.evaluation import diebold_mariano, friedman_nemenyi
 
 
+def _label(res: dict) -> str:
+    """Model name with its variant tag and gap setting, if any."""
+    label = res["model"]
+    if res.get("tag"):
+        label += f"/{res['tag']}"
+    miss = res.get("missing") or {}
+    if miss.get("rate"):
+        label += f"[{miss['mode']} {miss['rate']:g}]"
+    return label
+
+
 def collect(roots: list[Path]) -> pd.DataFrame:
     rows = []
     paths = sorted(p for r in roots for p in r.rglob("*.json"))
@@ -41,7 +52,7 @@ def collect(roots: list[Path]) -> pd.DataFrame:
             rows.append(
                 {
                     "dataset": res["dataset"],
-                    "model": res["model"],
+                    "model": _label(res),
                     "horizon": res["horizon"],
                     "seed": res["seed"],
                     "split": split,
@@ -80,7 +91,7 @@ def dm_table(
         if not res_path.exists():
             continue
         res = json.loads(res_path.read_text())
-        task = (res["dataset"], res["horizon"], res["model"])
+        task = (res["dataset"], res["horizon"], _label(res))
         files.setdefault(task, []).append((path, res))
     tasks = {(d, h) for d, h, _ in files}
     for d, h in sorted(tasks):

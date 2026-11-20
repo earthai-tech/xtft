@@ -32,12 +32,20 @@ class VariableSelection(nn.Module):
         selection weights.
     dropout : float, default=0.0
         Dropout probability in the weight network.
+    missing_aware : bool, default=False
+        Add learned terms for missing inputs to the embeddings; the
+        forward pass then accepts `mask` and `delta`.
 
     Notes
     -----
     Each scalar :math:`x_j` is embedded as
-    :math:`\xi_j = w_j x_j + b_j \in \mathbb{R}^d` and refined by a
-    per-variable two-layer network
+    :math:`\xi_j = w_j x_j + b_j \in \mathbb{R}^d`; with
+    `missing_aware`, the observation mask :math:`m_j` and the time
+    since the last observation :math:`\delta_j` add
+    :math:`(1 - m_j)\, u_j + \log(1 + \delta_j)\, s_j` with learned
+    :math:`u_j, s_j \in \mathbb{R}^d`, a term that vanishes for
+    observed inputs (:math:`m_j = 1, \delta_j = 0`). The embedding
+    is refined by a per-variable two-layer network
 
     .. math::
 
@@ -85,6 +93,7 @@ class VariableSelection(nn.Module):
         d_model: int,
         context_features: int | None = None,
         dropout: float = 0.0,
+        missing_aware: bool = False,
     ) -> None:
         super().__init__()
         if num_variables < 1:
@@ -96,6 +105,10 @@ class VariableSelection(nn.Module):
         v, d = num_variables, d_model
         self.embed_w = nn.Parameter(torch.empty(v, d))
         self.embed_b = nn.Parameter(torch.zeros(v, d))
+        self.missing_aware = missing_aware
+        if missing_aware:
+            self.missing_u = nn.Parameter(torch.zeros(v, d))
+            self.missing_s = nn.Parameter(torch.zeros(v, d))
         self.ff_a = nn.Parameter(torch.empty(v, d, d))
         self.ff_a_b = nn.Parameter(torch.zeros(v, d))
         self.ff_u = nn.Parameter(torch.empty(v, d, d))
@@ -113,13 +126,21 @@ class VariableSelection(nn.Module):
     def reset_parameters(self) -> None:
         """Initialise weights: unit-variance embeddings, uniform FF."""
         nn.init.normal_(self.embed_w, std=1.0)
+        if self.missing_aware:
+            nn.init.normal_(self.missing_u, std=0.1)
+            nn.init.normal_(self.missing_s, std=0.1)
         bound = 1.0 / math.sqrt(self.d_model)
         nn.init.uniform_(self.ff_a, -bound, bound)
         # Small output weights: the refinement starts near identity.
         nn.init.uniform_(self.ff_u, -0.1 * bound, 0.1 * bound)
 
     def forward(
-        self, x: Tensor, context: Tensor | None = None
+        self,
+        x: Tensor,
+        context: Tensor | None = None,
+        *,
+        mask: Tensor | None = None,
+        delta: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Select and combine variables.
 
@@ -129,6 +150,10 @@ class VariableSelection(nn.Module):
             Inputs of shape ``(B, V)`` or ``(B, T, V)``.
         context : torch.Tensor or None, optional
             Static context of shape ``(B, context_features)``.
+        mask, delta : torch.Tensor or None, optional
+            Observation mask (1 observed, 0 missing) and steps since
+            the last observation, both shaped like `x`; used only
+            when the layer is `missing_aware`. Give both or neither.
 
         Returns
         -------
@@ -141,14 +166,23 @@ class VariableSelection(nn.Module):
         Raises
         ------
         ValueError
-            If the last dimension of `x` is not `num_variables`.
+            If the last dimension of `x` is not `num_variables`, or
+            only one of `mask` and `delta` is given.
         """
         if x.shape[-1] != self.num_variables:
             raise ValueError(
                 f"Expected {self.num_variables} variables in the last "
                 f"dimension, got {x.shape[-1]}."
             )
+        if (mask is None) != (delta is None):
+            raise ValueError("Pass both mask and delta, or neither.")
         xi = x.unsqueeze(-1) * self.embed_w + self.embed_b
+        if self.missing_aware and mask is not None:
+            xi = (
+                xi
+                + (1.0 - mask).unsqueeze(-1) * self.missing_u
+                + torch.log1p(delta).unsqueeze(-1) * self.missing_s
+            )
         hidden = torch.einsum("...vd,vde->...ve", xi, self.ff_a)
         hidden = nn.functional.elu(hidden + self.ff_a_b)
         refined = torch.einsum("...vd,vde->...ve", hidden, self.ff_u)

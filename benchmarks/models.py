@@ -181,11 +181,21 @@ class XTFTAdapter:
     def fit(self, ctx: RunContext) -> None:
         from xtft.nn.torch.trainer import TrainConfig, fit
 
+        # XTFT handles NaN inputs itself unless missing=False.
+        fill = None if self.model.missing else 0.0
         train = WindowDataset(
-            ctx.panel, ctx.train_index, ctx.input_size, ctx.horizon
+            ctx.panel,
+            ctx.train_index,
+            ctx.input_size,
+            ctx.horizon,
+            fill_value=fill,
         )
         val = WindowDataset(
-            ctx.panel, ctx.val_index, ctx.input_size, ctx.horizon
+            ctx.panel,
+            ctx.val_index,
+            ctx.input_size,
+            ctx.horizon,
+            fill_value=fill,
         )
         cfg = TrainConfig(
             max_epochs=ctx.max_epochs,
@@ -201,7 +211,11 @@ class XTFTAdapter:
         from xtft.nn.torch.trainer import predict
 
         ds = WindowDataset(
-            ctx.panel, index, ctx.input_size, ctx.horizon
+            ctx.panel,
+            index,
+            ctx.input_size,
+            ctx.horizon,
+            fill_value=None if self.model.missing else 0.0,
         )
         q = predict(self.model, ds)
         return q[:, :, 0, :]  # single target

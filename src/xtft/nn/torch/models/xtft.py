@@ -45,6 +45,7 @@ from ..layers import (
     GatedLinearUnit,
     GatedResidualNetwork,
     LocalWindowAttention,
+    MissingValueDecay,
     MultiResolutionEncoder,
     VariableSelection,
 )
@@ -54,6 +55,28 @@ __all__ = ["XTFT"]
 
 # Variance floor of the instance normalisation (flat windows).
 _NORM_EPS = 1e-5
+
+
+def _window_stats(target: Tensor) -> tuple[Tensor, Tensor]:
+    """Mean and scale over observed steps, shape ``(B, 1, O)``.
+
+    Non-finite entries are ignored; a window with no observed value
+    gets mean 0 and scale 1 (the standardised defaults).
+    """
+    observed = torch.isfinite(target)
+    count = observed.sum(dim=1, keepdim=True)
+    safe = count.clamp(min=1).to(target.dtype)
+    values = torch.where(observed, target, torch.zeros_like(target))
+    mu = values.sum(dim=1, keepdim=True) / safe
+    centred = torch.where(
+        observed, target - mu, torch.zeros_like(target)
+    )
+    var = (centred**2).sum(dim=1, keepdim=True) / safe
+    sigma = torch.sqrt(var + _NORM_EPS)
+    empty = count == 0
+    mu = torch.where(empty, torch.zeros_like(mu), mu)
+    sigma = torch.where(empty, torch.ones_like(sigma), sigma)
+    return mu, sigma
 
 
 def _shape_of(x: Tensor | None) -> tuple[int, ...] | None:
@@ -125,6 +148,12 @@ class XTFT(nn.Module):
         first `output_dim` channels of `x_dynamic` to be the past
         targets. Use it for non-stationary series whose level
         drifts outside the training range.
+    missing : bool, default=True
+        Accept ``NaN`` for missing values in `x_dynamic` and
+        handle them natively: learned decay imputation [2]_ and
+        missingness-aware variable embeddings (see Notes). Missing
+        static or known inputs are set to 0 (the standardised
+        mean). With ``False``, ``NaN`` inputs give ``NaN`` outputs.
 
     Attributes
     ----------
@@ -187,10 +216,8 @@ class XTFT(nn.Module):
     Inputs and outputs follow the fusionlab-learn XTFT: the known
     inputs cover the history and the horizon, shape
     ``(B, T + H, F)``; a horizon-only array ``(B, H, F)`` is also
-    accepted. The model does not impute: NaN inputs give NaN
-    outputs, so missing inputs must be filled upstream. Missing
-    *targets* are handled by
-    :func:`~xtft.nn.torch.probabilistic.pinball_loss`.
+    accepted. Missing inputs are passed as ``NaN`` (handled when
+    `missing` is true, see below).
 
     With `instance_norm`, the target channels :math:`y_t \in
     \mathbb{R}^{O}` of the history are replaced by
@@ -201,6 +228,22 @@ class XTFT(nn.Module):
     map is increasing, so the quantiles still do not cross; the
     loss is computed on the restored scale.
 
+    With `missing`, the observation mask :math:`m_t` and the steps
+    since the last observation :math:`\delta_t` of every past
+    variable are derived from the ``NaN`` pattern
+    (:func:`~xtft.nn.torch.layers.observation_features`). The mean
+    and variance of the instance normalisation are taken over
+    observed steps only (:math:`\mu = 0, \sigma = 1` for a window
+    without observed target). Missing entries are then imputed as
+    :math:`\gamma_t x^{\mathrm{last}}_t` with the learned decay
+    :math:`\gamma_t = \exp(-\max(0, w \delta_t + b))`
+    (:class:`~xtft.nn.torch.layers.MissingValueDecay`), and the
+    past variable embeddings receive :math:`(1 - m_t) u +
+    \log(1 + \delta_t) s`, so the selection weights can use
+    missingness itself. On complete data these terms vanish.
+    Missing targets in the loss are skipped by
+    :func:`~xtft.nn.torch.probabilistic.pinball_loss`.
+
     References
     ----------
     .. [1] Kim, T., Kim, J., Tae, Y., Park, C., Choi, J.-H. and
@@ -208,6 +251,10 @@ class XTFT(nn.Module):
        accurate time-series forecasting against distribution
        shift. *International Conference on Learning
        Representations (ICLR)*.
+    .. [2] Che, Z., Purushotham, S., Cho, K., Sontag, D. and
+       Liu, Y. (2018). Recurrent neural networks for multivariate
+       time series with missing values. *Scientific Reports*, 8,
+       6085. https://doi.org/10.1038/s41598-018-24271-9
 
     Examples
     --------
@@ -250,6 +297,7 @@ class XTFT(nn.Module):
         cross_window: float = 16.0,
         dropout: float = 0.1,
         instance_norm: bool = False,
+        missing: bool = True,
     ) -> None:
         super().__init__()
         for name, value, low in (
@@ -288,6 +336,7 @@ class XTFT(nn.Module):
             )
         d = hidden_units
         self.instance_norm = bool(instance_norm)
+        self.missing = bool(missing)
         self.static_input_dim = static_input_dim
         self.dynamic_input_dim = dynamic_input_dim
         self.future_input_dim = future_input_dim
@@ -310,11 +359,14 @@ class XTFT(nn.Module):
             self.ctx_state = GatedResidualNetwork(
                 d, d, dropout=dropout
             )
+        if self.missing:
+            self.missing_decay = MissingValueDecay(dynamic_input_dim)
         self.past_vsn = VariableSelection(
             dynamic_input_dim + future_input_dim,
             d,
             context_features=ctx,
             dropout=dropout,
+            missing_aware=self.missing,
         )
         if future_input_dim:
             self.future_vsn = VariableSelection(
@@ -478,6 +530,11 @@ class XTFT(nn.Module):
         x_static, x_dynamic, past_known, future_known = (
             self._split_inputs(x_static, x_dynamic, x_future)
         )
+        if self.missing:
+            x_static, past_known, future_known = (
+                None if a is None else torch.nan_to_num(a, nan=0.0)
+                for a in (x_static, past_known, future_known)
+            )
         batch = x_dynamic.shape[0]
         c_sel = c_enr = c_state = static_w = None
         if self.static_input_dim:
@@ -489,19 +546,28 @@ class XTFT(nn.Module):
         if self.instance_norm:
             o = self.output_dim
             target = x_dynamic[..., :o]
-            mu = target.mean(dim=1, keepdim=True)  # (B, 1, O)
-            sigma = torch.sqrt(
-                target.var(dim=1, keepdim=True, unbiased=False)
-                + _NORM_EPS
-            )
+            mu, sigma = _window_stats(target)  # (B, 1, O) each
             x_dynamic = torch.cat(
                 [(target - mu) / sigma, x_dynamic[..., o:]], dim=-1
             )
 
+        mask = delta = None
+        if self.missing:
+            x_dynamic, mask, delta = self.missing_decay(x_dynamic)
+            if past_known is not None:
+                mask = torch.cat(
+                    [mask, torch.ones_like(past_known)], dim=-1
+                )
+                delta = torch.cat(
+                    [delta, torch.zeros_like(past_known)], dim=-1
+                )
+
         past = x_dynamic
         if past_known is not None:
             past = torch.cat([x_dynamic, past_known], dim=-1)
-        z_past, past_w = self.past_vsn(past, c_sel)
+        z_past, past_w = self.past_vsn(
+            past, c_sel, mask=mask, delta=delta
+        )
 
         memories, state = self.encoder(z_past, c_state)
         # Gated skip from the selected inputs to the finest scale.

@@ -2,6 +2,7 @@
 
 from .attention import CrossScaleAttention, LocalWindowAttention
 from .grn import GatedLinearUnit, GatedResidualNetwork
+from .missing import MissingValueDecay, observation_features
 from .multiresolution import (
     AntiAliasedDecimator,
     MultiResolutionEncoder,
@@ -15,7 +16,9 @@ __all__ = [
     "GatedLinearUnit",
     "GatedResidualNetwork",
     "LocalWindowAttention",
+    "MissingValueDecay",
     "MultiResolutionEncoder",
     "VariableSelection",
+    "observation_features",
     "windowed_sinc_lowpass",
 ]
