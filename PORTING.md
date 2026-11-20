@@ -38,6 +38,10 @@ subpackage).
 * `nn/tf/_tensor_validation.py`: `rank is -1` changed to
   `rank == -1`.
 * Dotted `fusionlab.` paths in docstrings renamed to `xtft.`.
+* `decorators.py` (`NumpyDocstringFormatter.sphinx_validation`):
+  no longer pip-installs `docutils` at import time (that path also
+  raised a circular import); validation is skipped when docutils
+  is absent.
 
 ## Known leftovers (to clean when each module is rewritten)
 
@@ -45,6 +49,9 @@ subpackage).
   mentions FusionLab.
 * Legacy docstring examples that are not runnable (for example
   `from xtft.nn.tf.transformers import XTFT`, local paths).
+* `utils/sys_utils.py` still defaults to `auto_install=True` in
+  several helpers (installs packages when called); switch to
+  explicit errors.
 * Ported code does not yet meet the 71-character and numpydoc
   standards; Ruff excludes it (see `pyproject.toml`).
 

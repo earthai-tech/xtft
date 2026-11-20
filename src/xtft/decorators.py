@@ -4396,16 +4396,17 @@ class NumpyDocstringFormatter:
         This method provides a conceptual approach and requires a Sphinx 
         environment to be properly implemented.
         """
-        from xtft.utils.deps_utils import import_optional_dependency
-        
-        try: 
-            import_optional_dependency ("docutils")
-        except: 
-            from xtft.utils.deps_utils import is_module_installed 
-            from xtft.utils.deps_utils import ensure_module_installed
-            if not is_module_installed("docutils"): 
-                ensure_module_installed('docutils', auto_install=True)
-            
+        # Validation is optional: never install packages as a side
+        # effect of decorating a function (fusionlab did, at import
+        # time, which also triggered a circular import).
+        import importlib.util
+
+        if importlib.util.find_spec("docutils") is None:
+            _logger.debug(
+                "docutils not installed; docstring validation "
+                "skipped.")
+            return
+
         from docutils import nodes
         from docutils.core import publish_doctree
         
