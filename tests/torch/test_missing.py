@@ -157,3 +157,42 @@ def test_window_dataset_fill_value():
     kept = WindowDataset(panel, idx, 10, 2, fill_value=None)[0]["past"]
     assert np.isfinite(filled).all()
     assert np.isnan(kept[[3, 9], 0]).all()
+
+
+def test_seasonal_gap_filling_follows_the_previous_cycle():
+    layer = MissingValueDecay(1, season=4)
+    t = torch.arange(16, dtype=torch.float32)
+    x = torch.sin(2 * torch.pi * t / 4).view(1, -1, 1).clone()
+    x[0, 9:13] = NAN  # one full cycle missing
+    x_hat, mask, delta = layer(x)
+    m, last, d = observation_features(x)
+    gamma = torch.exp(-torch.relu(0.1 * d))
+    lag = torch.full_like(x, NAN)
+    lag[:, 4:] = x[:, :-4]
+    expect = gamma * last + (1 - gamma) * 0.5 * torch.nan_to_num(lag)
+    gap = (~mask.bool()) & torch.isfinite(lag)
+    torch.testing.assert_close(x_hat[gap], expect[gap])
+    observed = mask.bool()
+    assert torch.equal(x_hat[observed], x[observed])
+
+
+def test_seasonal_term_needs_an_observed_lag_and_learns():
+    layer = MissingValueDecay(2, season=3)
+    x = torch.tensor([[[NAN, 1.0]] * 8])  # variable 0 never seen
+    x_hat, _, _ = layer(x)
+    assert torch.all(x_hat[0, :, 0] == 0)
+    y = with_gaps(torch.randn(4, 30, 2), 0.4)
+    layer(y)[0].sum().backward()
+    assert layer.seasonal_logit.grad.abs().sum() > 0
+
+
+def test_season_does_not_change_complete_inputs_or_initial_params():
+    xs, xd, xf = inputs()
+    plain = make().eval()
+    seasonal = make(season=6).eval()
+    with torch.no_grad():
+        torch.testing.assert_close(
+            plain(xs, xd, xf), seasonal(xs, xd, xf)
+        )
+    with pytest.raises(ValueError, match="season"):
+        MissingValueDecay(1, season=0)

@@ -9,6 +9,7 @@ same loop trains XTFT and its ablations.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import logging
 import math
@@ -60,7 +61,14 @@ class TrainConfig:
         Seed of parameter initialisation is the caller's; this one
         seeds batch order and dropout.
     device : str, default="auto"
-        ``"auto"``, ``"cpu"`` or ``"cuda[:i]"``.
+        ``"auto"`` (CUDA when available, else CPU), ``"cpu"``,
+        ``"cuda[:i]"`` or ``"mps"``.
+    amp : {None, "bf16", "fp16"}, default=None
+        Mixed precision: the forward pass runs under
+        ``torch.autocast`` in bfloat16 or float16 while parameters,
+        optimiser state and the loss stay in float32. ``"fp16"``
+        needs CUDA and uses gradient scaling; ``"bf16"`` also runs
+        on CPU. ``None`` trains in float32.
     """
 
     max_epochs: int = 100
@@ -74,15 +82,34 @@ class TrainConfig:
     num_workers: int = 0
     seed: int = 0
     device: str = "auto"
+    amp: str | None = None
+
+
+_AMP_DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16}
+
+
+def _autocast(device, amp: str | None):
+    """Autocast context for `amp` on `device` (no-op for None)."""
+    if amp is None:
+        return contextlib.nullcontext()
+    if amp not in _AMP_DTYPES:
+        raise ValueError(
+            f"amp must be None, 'bf16' or 'fp16', got {amp!r}."
+        )
+    if amp == "fp16" and device.type != "cuda":
+        raise ValueError("amp='fp16' needs a CUDA device.")
+    return torch.autocast(device.type, dtype=_AMP_DTYPES[amp])
 
 
 def _inputs(batch: dict[str, Tensor], device):
     """Map a collated window batch to model inputs."""
-    xs = batch["static"].to(device)
-    xf = batch["future"].to(device)
+    # Asynchronous copies overlap with compute when the loader
+    # pins memory (CUDA); elsewhere non_blocking is a no-op.
+    xs = batch["static"].to(device, non_blocking=True)
+    xf = batch["future"].to(device, non_blocking=True)
     return (
         xs if xs.shape[-1] else None,
-        batch["past"].to(device),
+        batch["past"].to(device, non_blocking=True),
         xf if xf.shape[-1] else None,
     )
 
@@ -96,7 +123,7 @@ def _as_4d(pred: Tensor, y: Tensor) -> Tensor:
     return pred
 
 
-def _loader(ds, cfg: TrainConfig, shuffle: bool, gen=None):
+def _loader(ds, cfg: TrainConfig, shuffle: bool, gen=None, pin=False):
     if shuffle and cfg.steps_per_epoch:
         sampler = RandomSampler(
             ds,
@@ -109,6 +136,7 @@ def _loader(ds, cfg: TrainConfig, shuffle: bool, gen=None):
             cfg.batch_size,
             sampler=sampler,
             num_workers=cfg.num_workers,
+            pin_memory=pin,
         )
     return DataLoader(
         ds,
@@ -116,16 +144,19 @@ def _loader(ds, cfg: TrainConfig, shuffle: bool, gen=None):
         shuffle=shuffle,
         generator=gen,
         num_workers=cfg.num_workers,
+        pin_memory=pin,
     )
 
 
-def _evaluate(model, loader, quantiles, device) -> float:
+def _evaluate(model, loader, quantiles, device, amp=None) -> float:
     model.eval()
     total, count = 0.0, 0
     with torch.inference_mode():
         for batch in loader:
-            y = batch["y"].to(device)
-            pred = _as_4d(model(*_inputs(batch, device)), y)
+            y = batch["y"].to(device, non_blocking=True)
+            with _autocast(device, amp):
+                out = model(*_inputs(batch, device))
+            pred = _as_4d(out.float(), y)
             n = int(torch.isfinite(y).sum())
             if n:
                 total += float(pinball_loss(y, pred, quantiles)) * n
@@ -197,6 +228,11 @@ def fit(
     if len(train_ds) == 0:
         raise ValueError("Empty training set.")
     device = resolve_device(cfg.device)
+    _autocast(device, cfg.amp)  # validate before any work
+    pin = device.type == "cuda"
+    scaler = torch.amp.GradScaler(
+        device.type, enabled=cfg.amp == "fp16"
+    )
     torch.manual_seed(cfg.seed)
     gen = torch.Generator().manual_seed(cfg.seed)
     model.to(device)
@@ -207,9 +243,11 @@ def fit(
         )
     except (RuntimeError, TypeError):
         opt = torch.optim.Adam(model.parameters(), **opt_kw)
-    train_loader = _loader(train_ds, cfg, shuffle=True, gen=gen)
+    train_loader = _loader(
+        train_ds, cfg, shuffle=True, gen=gen, pin=pin
+    )
     val_loader = (
-        _loader(val_ds, cfg, shuffle=False)
+        _loader(val_ds, cfg, shuffle=False, pin=pin)
         if val_ds is not None and len(val_ds)
         else None
     )
@@ -220,27 +258,33 @@ def fit(
         model.train()
         running, steps = 0.0, 0
         for batch in train_loader:
-            y = batch["y"].to(device)
+            y = batch["y"].to(device, non_blocking=True)
             opt.zero_grad(set_to_none=True)
-            pred = _as_4d(model(*_inputs(batch, device)), y)
+            with _autocast(device, cfg.amp):
+                out = model(*_inputs(batch, device))
+            # The loss is summed in float32 whatever the autocast
+            # dtype of the forward pass.
+            pred = _as_4d(out.float(), y)
             loss = pinball_loss(y, pred, levels)
             if not torch.isfinite(loss):
                 raise ValueError(
                     f"Non-finite training loss at epoch {epoch}."
                 )
-            loss.backward()
+            scaler.scale(loss).backward()
             if cfg.grad_clip:
+                scaler.unscale_(opt)
                 nn.utils.clip_grad_norm_(
                     model.parameters(), cfg.grad_clip
                 )
-            opt.step()
+            scaler.step(opt)
+            scaler.update()
             running += float(loss)
             steps += 1
         history["train_loss"].append(running / max(steps, 1))
         if val_loader is None:
             history["val_loss"].append(math.nan)
             continue
-        val = _evaluate(model, val_loader, levels, device)
+        val = _evaluate(model, val_loader, levels, device, cfg.amp)
         history["val_loss"].append(val)
         logger.info(
             "epoch %d train %.5f val %.5f",
@@ -272,6 +316,7 @@ def predict(
     ds,
     batch_size: int = 256,
     device: str = "auto",
+    amp: str | None = None,
 ) -> np.ndarray:
     """Forecast every window of `ds`.
 
@@ -285,6 +330,9 @@ def predict(
         Windows per forward pass.
     device : str, default="auto"
         Device for inference.
+    amp : {None, "bf16", "fp16"}, default=None
+        Mixed-precision inference (see :class:`TrainConfig`);
+        outputs are returned in float32.
 
     Returns
     -------
@@ -294,12 +342,16 @@ def predict(
     """
     dev = resolve_device(device)
     model.to(dev).eval()
-    loader = DataLoader(ds, batch_size, shuffle=False)
+    loader = DataLoader(
+        ds, batch_size, shuffle=False, pin_memory=dev.type == "cuda"
+    )
     out = []
     with torch.inference_mode():
         for batch in loader:
             y = batch["y"]
-            pred = _as_4d(model(*_inputs(batch, dev)), y.to(dev))
+            with _autocast(dev, amp):
+                res = model(*_inputs(batch, dev))
+            pred = _as_4d(res.float(), y.to(dev))
             out.append(pred.cpu().numpy())
     if not out:
         return np.zeros((0,), dtype=np.float32)

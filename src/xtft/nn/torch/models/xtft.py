@@ -154,6 +154,12 @@ class XTFT(nn.Module):
         missingness-aware variable embeddings (see Notes). Missing
         static or known inputs are set to 0 (the standardised
         mean). With ``False``, ``NaN`` inputs give ``NaN`` outputs.
+    season : int or None, default=None
+        Seasonal lag, in steps, of the gap filling: a long gap
+        follows the value one season earlier
+        (:class:`~xtft.nn.torch.layers.MissingValueDecay`). Only
+        used with `missing`; :func:`xtft.data.dominant_periods`
+        estimates it from the training data.
 
     Attributes
     ----------
@@ -298,6 +304,7 @@ class XTFT(nn.Module):
         dropout: float = 0.1,
         instance_norm: bool = False,
         missing: bool = True,
+        season: int | None = None,
     ) -> None:
         super().__init__()
         for name, value, low in (
@@ -360,7 +367,9 @@ class XTFT(nn.Module):
                 d, d, dropout=dropout
             )
         if self.missing:
-            self.missing_decay = MissingValueDecay(dynamic_input_dim)
+            self.missing_decay = MissingValueDecay(
+                dynamic_input_dim, season=season
+            )
         self.past_vsn = VariableSelection(
             dynamic_input_dim + future_input_dim,
             d,

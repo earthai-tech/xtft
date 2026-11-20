@@ -166,6 +166,31 @@ class _HistoryLoop:
         return _to_scaled(ctx, out, index)
 
 
+def _auto_season(ctx: RunContext, season):
+    """Seasonal lag of XTFT's gap filling (``"auto"``: estimated).
+
+    The longest significant period of the training targets that
+    fits in half the input window (so the lagged value is inside
+    it); ``None`` when there is none. ``0`` or ``None`` disable it.
+    """
+    from xtft.data import dominant_periods
+
+    if season in (0, None):
+        return None
+    if season != "auto":
+        return int(season)
+    p = ctx.panel
+    ys = [
+        p.target[i][: ctx.val_start[i], 0] for i in range(p.n_series)
+    ]
+    periods = dominant_periods(
+        ys, max_period=max(2, ctx.input_size // 2), top=5
+    )
+    found = max(periods) if periods else None
+    logger.info("XTFT seasonal lag: %s (periods %s)", found, periods)
+    return found
+
+
 class XTFTAdapter:
     """PyTorch XTFT trained with :func:`xtft.nn.torch.trainer.fit`."""
 
@@ -188,6 +213,9 @@ class XTFTAdapter:
         }
         kw.update(ctx.model_kw)
         kw["scales"] = tuple(kw["scales"])
+        # Off by default: no measurable gain in the gap study (job
+        # 107077); pass {"season": "auto"} or an int to enable it.
+        kw["season"] = _auto_season(ctx, kw.get("season"))
         self.lr = float(kw.pop("lr", 1e-3))
         p = ctx.panel
         self.model = XTFT(

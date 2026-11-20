@@ -96,6 +96,11 @@ class MissingValueDecay(nn.Module):
     ----------
     num_variables : int
         Number :math:`V \ge 1` of input variables.
+    season : int or None, default=None
+        Seasonal lag :math:`m \ge 1` in steps. When given, a gap
+        decays toward a learned fraction of the value one season
+        earlier, where that value was observed, instead of toward
+        the mean (see Notes). ``None`` disables it.
 
     Notes
     -----
@@ -119,6 +124,18 @@ class MissingValueDecay(nn.Module):
     enforced, but :math:`\gamma_t \le 1` always holds). Observed
     entries are returned unchanged.
 
+    With a seasonal lag :math:`m`, the long-gap target
+    :math:`\bar x_j` is replaced, wherever :math:`x_{t-m}` was
+    observed (:math:`m_{t-m} = 1`), by
+    :math:`\beta_j x_{t-m}` with
+    :math:`\beta_j = \sigma(\theta_j) \in (0, 1)` learned per
+    variable (initially 0.5); elsewhere it stays 0. A long outage
+    in a seasonal series then follows the previous cycle instead of
+    flattening to the mean, while :math:`\beta_j \to 0` lets the
+    model ignore the candidate where it does not help. The lag is
+    usually the dominant period of the training data
+    (:func:`xtft.data.dominant_periods`).
+
     Examples
     --------
     >>> import torch
@@ -132,13 +149,29 @@ class MissingValueDecay(nn.Module):
     True
     """
 
-    def __init__(self, num_variables: int) -> None:
+    def __init__(
+        self, num_variables: int, season: int | None = None
+    ) -> None:
         super().__init__()
         if num_variables < 1:
             raise ValueError(
                 f"num_variables must be >= 1, got {num_variables}."
             )
+        if season is not None and (
+            not isinstance(season, int) or season < 1
+        ):
+            raise ValueError(
+                "season must be a positive int or None, got "
+                f"{season!r}."
+            )
         self.num_variables = num_variables
+        self.season = season
+        if season is not None:
+            # Zero init (sigmoid 0.5) draws no random numbers, so a
+            # seasonal model starts like the non-seasonal one.
+            self.seasonal_logit = nn.Parameter(
+                torch.zeros(num_variables)
+            )
         # w = 0.1, b = 0: half-life of about 7 steps at start.
         self.weight = nn.Parameter(torch.full((num_variables,), 0.1))
         self.bias = nn.Parameter(torch.zeros(num_variables))
@@ -170,7 +203,17 @@ class MissingValueDecay(nn.Module):
             )
         mask, last, delta = observation_features(x)
         gamma = torch.exp(-torch.relu(self.weight * delta + self.bias))
-        imputed = gamma * last
+        target = torch.zeros_like(x)
+        m = self.season
+        if m is not None and m < x.shape[1]:
+            lagged = torch.full_like(x, float("nan"))
+            lagged[:, m:] = x[:, :-m]
+            seen = torch.isfinite(lagged)
+            beta = torch.sigmoid(self.seasonal_logit)
+            target = torch.where(
+                seen, beta * torch.nan_to_num(lagged), target
+            )
+        imputed = gamma * last + (1.0 - gamma) * target
         x_obs = torch.where(mask.bool(), x, torch.zeros_like(x))
         x_hat = mask * x_obs + (1.0 - mask) * imputed
         return x_hat, mask, delta

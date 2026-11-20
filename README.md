@@ -91,6 +91,23 @@ through `xtft.data`: chronological splits, train-only scaling and
 rolling forecast windows; `xtft.nn.torch.trainer.fit` trains with
 early stopping.
 
+### GPU
+
+Training and inference run on CUDA (and Apple MPS) without code
+changes: `TrainConfig(device="auto")` picks the GPU when one is
+visible, batches are copied asynchronously from pinned memory, and
+`TrainConfig(amp="bf16")` or `amp="fp16"` (CUDA) trains in mixed
+precision with float32 parameters and loss. To check a GPU machine
+(a workstation, a cluster node, or a free Colab or Kaggle notebook):
+
+```powershell
+pip install -e ".[torch,dev]"
+python tools/gpu_check.py
+```
+
+It runs the device tests, compares GPU and CPU outputs, and times a
+training step in float32, bf16 and fp16.
+
 ### Backends
 
 | Backend | Selected by | Provides |
