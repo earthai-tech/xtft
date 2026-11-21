@@ -131,12 +131,21 @@ def dm_table(
             continue
 
         def mean_loss(model, d=d, h=h):
-            parts = [
-                _origin_losses(p, key) for p, _ in files[(d, h, model)]
-            ]
+            parts = []
+            for p, _ in files[(d, h, model)]:
+                if key in np.load(p).files:
+                    parts.append(_origin_losses(p, key))
+                else:
+                    # Runs older than the loss key (e.g. before the
+                    # ACI split existed) cannot enter this test.
+                    logger.warning("%s has no %s; skipped.", p, key)
+            if not parts:
+                return None
             return pd.concat(parts, axis=1).mean(axis=1)
 
         ref = mean_loss(reference)
+        if ref is None:
+            continue
         stride = files[(d, h, reference)][0][1].get("stride", h)
         overlap = max(1, -(-h // stride))
         for model in sorted(
@@ -145,6 +154,8 @@ def dm_table(
             if model == reference:
                 continue
             other = mean_loss(model)
+            if other is None:
+                continue
             both = pd.concat([ref, other], axis=1, join="inner")
             if len(both) <= overlap + 2:
                 continue
