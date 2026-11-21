@@ -293,8 +293,22 @@ class NeuralForecastAdapter(_HistoryLoop):
         # Covariates the model can use; the others are not passed.
         futr = tuple(ctx.data.known) if cls.EXOGENOUS_FUTR else ()
         hist = tuple(ctx.data.past) if cls.EXOGENOUS_HIST else ()
+        stat = tuple(ctx.data.static) if cls.EXOGENOUS_STAT else ()
+        # Static covariates go in a separate frame (one row per
+        # series), as neuralforecast expects them.
+        self.static_df = (
+            ctx.data.df[["unique_id", *stat]]
+            .drop_duplicates("unique_id")
+            .reset_index(drop=True)
+            if stat
+            else None
+        )
         super().__init__(ctx, covariates=futr + hist, future=futr)
-        self.exog = {"futr": list(futr), "hist": list(hist)}
+        self.exog = {
+            "futr": list(futr),
+            "hist": list(hist),
+            "stat": list(stat),
+        }
         kw = {
             "h": ctx.horizon,
             "input_size": ctx.input_size,
@@ -323,6 +337,8 @@ class NeuralForecastAdapter(_HistoryLoop):
             kw["futr_exog_list"] = list(futr)
         if hist:
             kw["hist_exog_list"] = list(hist)
+        if stat:
+            kw["stat_exog_list"] = list(stat)
         kw.update(ctx.model_kw)
         self.name = name
         self.model = cls(**kw)
@@ -345,11 +361,14 @@ class NeuralForecastAdapter(_HistoryLoop):
         )
         val_size = int(np.min(ctx.test_start - ctx.val_start))
         start = time.perf_counter()
-        self.nf.fit(df=train_val, val_size=val_size)
+        self.nf.fit(
+            df=train_val, static_df=self.static_df, val_size=val_size
+        )
         self.fit_seconds = time.perf_counter() - start
         end = int(np.min(ctx.test_start)) - 1
         probe = self.nf.predict(
             df=train_val,
+            static_df=self.static_df,
             futr_df=self._future(ctx.panel.ids, end, ctx.horizon),
         ).reset_index()
         self.cols = _quantile_columns(probe, self.name, ctx.quantiles)
@@ -358,7 +377,9 @@ class NeuralForecastAdapter(_HistoryLoop):
         return self.run(
             ctx,
             index,
-            lambda h, f: self.nf.predict(df=h, futr_df=f),
+            lambda h, f: self.nf.predict(
+                df=h, static_df=self.static_df, futr_df=f
+            ),
         )
 
     def info(self) -> dict:
@@ -431,15 +452,19 @@ class StatsForecastAdapter(_HistoryLoop):
 
 
 def make_model(spec: str, ctx: RunContext):
-    """Build an adapter: ``xtft``, ``nf:<Model>`` or ``sf:<Model>``."""
+    """Build an adapter (xtft, lgb, lear, nf:<Model>, sf:<Model>)."""
     if spec == "xtft":
         return XTFTAdapter(ctx)
+    if spec in ("lgb", "lear"):
+        from baselines_ml import LEARAdapter, LightGBMAdapter
+
+        return (LightGBMAdapter if spec == "lgb" else LEARAdapter)(ctx)
     family, _, name = spec.partition(":")
     if family == "nf" and name:
         return NeuralForecastAdapter(ctx, name)
     if family == "sf" and name:
         return StatsForecastAdapter(ctx, name)
     raise ValueError(
-        f"Unknown model {spec!r}: use 'xtft', 'nf:<Model>' or "
-        "'sf:<Model>'."
+        f"Unknown model {spec!r}: use 'xtft', 'lgb', 'lear', "
+        "'nf:<Model>' or 'sf:<Model>'."
     )

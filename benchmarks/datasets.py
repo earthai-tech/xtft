@@ -275,10 +275,136 @@ def _load_synthetic(name: str) -> BenchmarkData:
     )
 
 
+_M5_EVENT_TYPES = ("Sporting", "Cultural", "National", "Religious")
+
+
+def _m5_store_dept_frame(directory: Path) -> pd.DataFrame:
+    """Aggregate M5 to store x department (level 9) with covariates.
+
+    Cached as parquet after the first call (the item-level data
+    have about 48 million rows).
+    """
+    cache = directory / "m5" / "m5_store_dept.parquet"
+    if cache.exists():
+        return pd.read_parquet(cache)
+    from datasetsforecast.m5 import M5
+
+    y, x, s = M5.load(str(directory))
+    s = s.set_index("unique_id")
+    y["store_id"] = y["unique_id"].map(s["store_id"]).astype(str)
+    y["dept_id"] = y["unique_id"].map(s["dept_id"]).astype(str)
+    sales = (
+        y.groupby(["store_id", "dept_id", "ds"], observed=True)["y"]
+        .sum()
+        .reset_index()
+    )
+    # Relative price level: each item's price over its own mean
+    # price, averaged over the items of a store and department.
+    price = x[["unique_id", "ds", "sell_price"]].copy()
+    price["rel"] = price["sell_price"] / price.groupby("unique_id")[
+        "sell_price"
+    ].transform("mean")
+    price["store_id"] = (
+        price["unique_id"].map(s["store_id"]).astype(str)
+    )
+    price["dept_id"] = price["unique_id"].map(s["dept_id"]).astype(str)
+    price = (
+        price.groupby(["store_id", "dept_id", "ds"], observed=True)[
+            "rel"
+        ]
+        .mean()
+        .rename("price_index")
+        .reset_index()
+    )
+    # Calendar covariates are the same for every item: take them
+    # from one item per state.
+    first = x.drop_duplicates("ds")[
+        ["ds", "event_type_1", "event_type_2"]
+    ].copy()
+    events = pd.DataFrame({"ds": first["ds"]})
+    for kind in _M5_EVENT_TYPES:
+        hit = (first["event_type_1"].astype(str) == kind) | (
+            first["event_type_2"].astype(str) == kind
+        )
+        events[f"event_{kind.lower()}"] = hit.astype(float).to_numpy()
+    snap = x.drop_duplicates("ds")[
+        ["ds", "snap_CA", "snap_TX", "snap_WI"]
+    ]
+    out = sales.merge(
+        price, on=["store_id", "dept_id", "ds"], how="left"
+    )
+    out = out.merge(events, on="ds", how="left").merge(snap, on="ds")
+    state = out["store_id"].str[:2]
+    out["snap"] = np.select(
+        [state == "CA", state == "TX", state == "WI"],
+        [out["snap_CA"], out["snap_TX"], out["snap_WI"]],
+    ).astype(float)
+    out = out.drop(columns=["snap_CA", "snap_TX", "snap_WI"])
+    out["price_index"] = out["price_index"].fillna(1.0)
+    out["unique_id"] = out["store_id"] + "_" + out["dept_id"]
+    out = out.sort_values(["unique_id", "ds"]).reset_index(drop=True)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(cache, index=False)
+    return out
+
+
+def _load_m5(name: str) -> BenchmarkData:
+    """M5 at the store x department level (70 daily series).
+
+    Level 9 of the M5 competition (Makridakis et al., 2022): unit
+    sales summed over the items of each store and department, from
+    2011-01-29 to 2016-06-19 (1969 days, the evaluation period
+    included). Known covariates: SNAP day of the store's state,
+    event indicators by type, a relative price index and calendar
+    encodings; static covariates: one-hot store, department and
+    state. Test: the last 364 days (13 origins of 28 days);
+    validation: the 364 days before. Data: the M5 files as
+    mirrored by ``datasetsforecast``; the original data are
+    distributed under the Kaggle competition rules.
+    """
+    from xtft.data import add_calendar_features
+
+    raw = _m5_store_dept_frame(_data_dir())
+    df = raw[
+        ["unique_id", "ds", "y", "snap", "price_index"]
+        + [f"event_{k.lower()}" for k in _M5_EVENT_TYPES]
+    ].copy()
+    df, calendar = add_calendar_features(
+        df, features=("dayofweek", "dayofmonth", "month")
+    )
+    static = []
+    for col, prefix in (
+        ("store_id", "store"),
+        ("dept_id", "dept"),
+        ("store_id", "state"),
+    ):
+        values = raw[col] if prefix != "state" else raw[col].str[:2]
+        for v in sorted(values.unique()):
+            name_ = f"{prefix}_{v}"
+            df[name_] = (values == v).astype(float).to_numpy()
+            static.append(name_)
+    known = (
+        ("snap", "price_index")
+        + tuple(f"event_{k.lower()}" for k in _M5_EVENT_TYPES)
+        + tuple(calendar)
+    )
+    return BenchmarkData(
+        name=name,
+        df=df,
+        freq="D",
+        season=7,
+        val_size=364,
+        test_size=364,
+        horizons=(28,),
+        static=tuple(static),
+        known=known,
+    )
+
+
 def available() -> list[str]:
     """Names accepted by :func:`load`."""
     epf = [f"EPF-{m}" for m in _EPF_MARKETS]
-    return sorted([*_LONG_HORIZON, *epf, "Synthetic"])
+    return sorted([*_LONG_HORIZON, *epf, "M5-StoreDept", "Synthetic"])
 
 
 def load(name: str) -> BenchmarkData:
@@ -302,6 +428,8 @@ def load(name: str) -> BenchmarkData:
         data = _load_long_horizon(name)
     elif name.startswith("EPF-") and name[4:] in _EPF_MARKETS:
         data = _load_epf(name)
+    elif name == "M5-StoreDept":
+        data = _load_m5(name)
     elif name == "Synthetic":
         data = _load_synthetic(name)
     else:
