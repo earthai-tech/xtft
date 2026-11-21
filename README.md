@@ -4,7 +4,7 @@
     <img src="docs/_static/logo/xtft-logo.svg" alt="XTFT: Cross-Scale Temporal Fusion Transformer" width="560"/>
   </picture>
   <br/>
-  <em>Multi-horizon probabilistic forecasting of many related series, with history read at several time scales and predictive intervals you can trust.</em>
+  <em>Covariate-aware probabilistic forecasting that stays robust to shift and gaps, with predictive intervals and whole-path bands you can trust.</em>
   <br/><br/>
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange"/>
   <img alt="Version" src="https://img.shields.io/badge/version-0.1.0.dev0-blueviolet"/>
@@ -30,26 +30,26 @@
 
 ## 🧭 Why XTFT?
 
-Many forecasting problems mix slow and fast dynamics: a daily cycle
-on top of a weekly one, a seasonal level drifting over years, a
-subsidence trend modulated by pumping. Reading the history at one
-resolution forces a model to learn every scale from the same
-sequence. And a forecast used for decisions needs intervals whose
-coverage is what it claims.
-
-XTFT keeps the gated, variable-selecting design of the Temporal Fusion
-Transformer and changes how the history is read and how uncertainty
-is reported:
+Forecasts that feed decisions rarely come from clean, stationary,
+univariate series. Prices depend on load and weather forecasts,
+sensors drop out, levels drift after the training period, and a
+planner asks whether a threshold will be crossed *anywhere* in the
+next day or year, not at one step. XTFT is built for that setting:
+it keeps the gated, variable-selecting design of the Temporal
+Fusion Transformer, adds robustness to shift and gaps, and comes
+with a calibration layer whose coverage claims hold up on held-out
+data.
 
 | | What XTFT does |
 |---|---|
-| 🎚️ **Anti-aliased multi-resolution encoder** | Each coarse view of the history is low-pass filtered (windowed sinc, cut-off at the new Nyquist frequency) before decimation, on a grid anchored at the forecast origin, so no scale aliases and the newest observation is never dropped. |
-| 🔀 **Cross-scale attention** | Causal attention with a learned soft window inside each resolution, then attention from every forecast step across all resolutions, with a per-step scale attribution. |
+| 🧩 **Covariate-aware fusion** | Static, past-observed and known-future covariates are selected and fused per step; many strong recent forecasters (PatchTST, DLinear, iTransformer) cannot use covariates at all. |
+| 🌊 **Robust to level shift** | Reversible instance normalisation, mask-aware, so series whose level drifts outside the training range stay forecastable. |
+| 🕳️ **Native missing data** | Pass gaps as `NaN`: masks, time since the last observation and a learned decay replace ad-hoc imputation. |
 | 📐 **Calibrated quantiles** | A monotone quantile head (quantiles never cross) and split-conformal calibration per horizon step, applied identically to any model. |
 | 🛰️ **Shift-robust intervals** | Adaptive conformal calibration re-estimates the interval margins causally as new observations arrive, keeping long-run coverage near nominal when the error distribution drifts after the calibration period. |
 | 🛤️ **Whole-path bands** | Conformal bands that contain the entire forecast path, not just each step, with a shift-adaptive version that updates causally as paths are observed. |
-| 🔍 **Interpretability** | Static, past and future variable weights, scale attributions and learned attention windows come out of the forward pass. |
-| 🌊 **Distribution shift** | Optional reversible instance normalisation for series whose level drifts outside the training range. |
+| 🔍 **Interpretability** | Static, past and future variable weights come out of the forward pass. |
+| 🎚️ **Optional multi-resolution encoder** | Anti-aliased, origin-aligned coarse views of the history with cross-scale attention (`scales=(1, 2, 4)`); in our ablations it neither helped nor hurt, and `scales=(1,)` gives a smaller, equally accurate model. |
 
 ## 🚀 Installation
 
@@ -78,7 +78,7 @@ model = XTFT(
 q = model(x_static, x_dynamic, x_future)        # (batch, 3, 3)
 loss = pinball_loss(y, q, model.quantiles)      # NaN targets skipped
 q, info = model(x_static, x_dynamic, x_future, return_details=True)
-info["scale_attribution"]                       # (batch, 3, n_scales)
+info["past_weights"]                            # (batch, steps, n_vars)
 ```
 
 Inputs: `x_static` is `(batch, n_static)`, `x_dynamic` is

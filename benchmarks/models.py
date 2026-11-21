@@ -203,7 +203,9 @@ class XTFTAdapter:
         kw = {
             "hidden_units": 64,
             "num_heads": 4,
-            "scales": (1, 2, 4),
+            # Single scale: the multi-resolution encoder gave no
+            # gain in the ablations (jobs 107105, 107282).
+            "scales": (1,),
             "dropout": 0.1,
             # Long-horizon series drift out of the training range
             # (ETTh1's test level); the neuralforecast baselines

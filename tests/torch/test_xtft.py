@@ -85,7 +85,7 @@ def test_quantiles_never_cross():
 
 
 def test_details_are_valid_distributions():
-    model = make_model(quantiles=LEVELS)
+    model = make_model(quantiles=LEVELS, scales=(1, 2, 4))
     _, info = model(*make_inputs(), return_details=True)
     for key, shape in (
         ("static_weights", (B, 3)),
@@ -253,3 +253,13 @@ def test_instance_norm_flat_window_is_finite():
 def test_instance_norm_needs_target_channels():
     with pytest.raises(ValueError, match="instance_norm"):
         make_model(d=1, output_dim=2, instance_norm=True)
+
+
+def test_default_is_single_scale():
+    model = make_model(quantiles=LEVELS)
+    assert model.scales == (1,)
+    _, info = model(*make_inputs(), return_details=True)
+    assert info["scale_attribution"].shape == (B, H, 1)
+    assert torch.allclose(
+        info["scale_attribution"], torch.ones(B, H, 1)
+    )

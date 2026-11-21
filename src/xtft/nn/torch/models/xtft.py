@@ -120,10 +120,14 @@ class XTFT(nn.Module):
         Model width :math:`d`; divisible by `num_heads`.
     num_heads : int, default=4
         Attention heads in both attention stages.
-    scales : sequence of int, default=(1, 2, 4)
+    scales : sequence of int, default=(1,)
         Strictly increasing decimation factors of the history,
-        starting with 1. ``(1,)`` removes the multi-resolution
-        component.
+        starting with 1. The default reads the history at its own
+        resolution; adding coarser views, e.g. ``(1, 2, 4)``,
+        enables the anti-aliased multi-resolution encoder. In our
+        ablations (short and long inputs) the extra views neither
+        improved nor degraded accuracy, so the simpler encoder is
+        the default.
     cell : {"lstm", "gru"}, default="lstm"
         Recurrent cell of the encoders and the decoder.
     antialias : bool, default=True
@@ -269,7 +273,8 @@ class XTFT(nn.Module):
     >>> _ = torch.manual_seed(0)
     >>> model = XTFT(static_input_dim=3, dynamic_input_dim=4,
     ...              future_input_dim=2, forecast_horizon=5,
-    ...              quantiles=[0.1, 0.5, 0.9], hidden_units=16)
+    ...              quantiles=[0.1, 0.5, 0.9], hidden_units=16,
+    ...              scales=(1, 2, 4))
     >>> xs = torch.randn(8, 3)
     >>> xp = torch.randn(8, 24, 4)
     >>> xf = torch.randn(8, 24 + 5, 2)
@@ -294,7 +299,7 @@ class XTFT(nn.Module):
         quantiles: Sequence[float] | None = None,
         hidden_units: int = 64,
         num_heads: int = 4,
-        scales: Sequence[int] = (1, 2, 4),
+        scales: Sequence[int] = (1,),
         cell: Literal["lstm", "gru"] = "lstm",
         antialias: bool = True,
         align: Literal["origin", "start"] = "origin",
