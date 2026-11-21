@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from xtft.evaluation import diebold_mariano, friedman_nemenyi
+
+logger = logging.getLogger("aggregate")
 
 
 def _label(res: dict) -> str:
@@ -58,6 +61,7 @@ def _runs(roots: list[Path], need_losses: bool = False) -> dict:
         try:
             res = json.loads(path.read_text())
         except json.JSONDecodeError:
+            logger.warning("Unreadable result file skipped: %s", path)
             continue
         if "metrics" not in res:
             continue
@@ -188,6 +192,9 @@ def main(argv=None) -> None:
     )
     ap.add_argument("--alpha", type=float, default=0.05)
     args = ap.parse_args(argv)
+    logging.basicConfig(
+        level=logging.WARNING, format="%(levelname)s %(message)s"
+    )
     out = args.out or args.roots[0]
     out.mkdir(parents=True, exist_ok=True)
     runs = collect(args.roots)

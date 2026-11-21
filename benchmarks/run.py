@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import platform
 import sys
 import time
@@ -73,6 +74,24 @@ def _seasonal_scales(panel, val_start, season) -> np.ndarray:
         s = np.nanmean(d) if np.isfinite(d).any() else np.nan
         out[i] = s if np.isfinite(s) and s > 0 else 1.0
     return out
+
+
+def _write_atomic(path: Path, write) -> None:
+    """Write a file via a temporary name, fsync and rename.
+
+    A crash or a lost write on a network file system then leaves
+    either the complete file or none, never an empty or partial
+    one (an empty result file was once seen on the cluster's
+    Lustre scratch). Raises OSError if the file ends up empty.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as f:
+        write(f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    if path.stat().st_size == 0:
+        raise OSError(f"{path} was written empty.")
 
 
 def _window_losses(y, q, quantiles) -> dict:
@@ -425,34 +444,41 @@ def main(argv=None) -> dict:
         tag += f"_{args.tag}"
     args.out_dir.mkdir(parents=True, exist_ok=True)
     path = args.out_dir / f"{tag}.json"
-    path.write_text(json.dumps(result, indent=2, default=float))
-    # Per-window test losses for paired significance tests; small
-    # (two floats per window), so always written.
+    # Arrays first, the JSON last: a result file only exists once
+    # everything it refers to has been written.
     raw = _window_losses(y_test, q_test, QUANTILES)
     cal_l = _window_losses(y_test, q_test_cal, QUANTILES)
     aci_l = _window_losses(y_test, q_test_aci, QUANTILES)
-    np.savez_compressed(
+    _write_atomic(
         args.out_dir / f"{tag}_losses.npz",
-        test_index=test_idx,
-        crps=raw["crps"],
-        ae=raw["ae"],
-        crps_cqr=cal_l["crps"],
-        ae_cqr=cal_l["ae"],
-        crps_aci=aci_l["crps"],
-        ae_aci=aci_l["ae"],
+        lambda f: np.savez_compressed(
+            f,
+            test_index=test_idx,
+            crps=raw["crps"],
+            ae=raw["ae"],
+            crps_cqr=cal_l["crps"],
+            ae_cqr=cal_l["ae"],
+            crps_aci=aci_l["crps"],
+            ae_aci=aci_l["ae"],
+        ),
     )
     if not args.no_preds:
         f32 = np.float32
-        np.savez_compressed(
+        _write_atomic(
             args.out_dir / f"{tag}_preds.npz",
-            val_index=val_idx,
-            y_val=y_val.astype(f32),
-            q_val=q_val.astype(f32),
-            test_index=test_idx,
-            y_test=y_test.astype(f32),
-            q_test=q_test.astype(f32),
-            quantiles=np.asarray(QUANTILES),
+            lambda f: np.savez_compressed(
+                f,
+                val_index=val_idx,
+                y_val=y_val.astype(f32),
+                q_val=q_val.astype(f32),
+                test_index=test_idx,
+                y_test=y_test.astype(f32),
+                q_test=q_test.astype(f32),
+                quantiles=np.asarray(QUANTILES),
+            ),
         )
+    text = json.dumps(result, indent=2, default=float).encode()
+    _write_atomic(path, lambda f: f.write(text))
     m = result["metrics"]
     logger.info(
         "%s: test MAE %.4f CRPS %.4f cov80 %.3f, CQR %.3f, ACI %.3f",
