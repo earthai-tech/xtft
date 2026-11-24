@@ -17,6 +17,7 @@ Adapters
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from dataclasses import dataclass, field
@@ -227,17 +228,39 @@ class XTFTAdapter:
             kw.pop("refit_window", ctx.data.val_size)
         )
         self.refit_lr = float(kw.pop("refit_lr", 0.5 * self.lr))
+        # finetune: accumulate short fine-tuning runs (no stopping);
+        # finetune_es: start from the trained model each time, early
+        # stop on the latest `refit_holdout` steps, keep the update
+        # only if it beats the trained model there; retrain: train a
+        # new model on the rolling window (the analogue of LEAR's
+        # recalibration).
+        self.refit_mode = kw.pop("refit_mode", "finetune")
+        if self.refit_mode not in (
+            "finetune",
+            "finetune_es",
+            "retrain",
+        ):
+            raise ValueError(
+                f"Unknown refit_mode {self.refit_mode!r}."
+            )
+        self.refit_holdout = int(
+            kw.pop("refit_holdout", self.refit_every or 1)
+        )
         self.refits = 0
+        self.reverts = 0
         p = ctx.panel
-        self.model = XTFT(
+        self._dims = (
             p.static.shape[1],
             p.target[0].shape[1] + p.past[0].shape[1],
             p.known[0].shape[1],
             ctx.horizon,
-            output_dim=p.target[0].shape[1],
-            quantiles=ctx.quantiles,
-            **kw,
         )
+        self._model_kw = {
+            "output_dim": p.target[0].shape[1],
+            "quantiles": ctx.quantiles,
+            **kw,
+        }
+        self.model = XTFT(*self._dims, **self._model_kw)
         self.kw = kw
         self.history: dict = {}
 
@@ -269,6 +292,8 @@ class XTFTAdapter:
             lr=self.lr,
         )
         self.history = fit(self.model, train, val, ctx.quantiles, cfg)
+        # The trained model, the anchor of anchored fine-tuning.
+        self._base_state = copy.deepcopy(self.model.state_dict())
 
     def _windows(self, ctx: RunContext, index: np.ndarray):
         return WindowDataset(
@@ -288,23 +313,21 @@ class XTFTAdapter:
         return self._forecast_updating(ctx, index)
 
     def _forecast_updating(self, ctx: RunContext, index: np.ndarray):
-        """Forecast in time order, fine-tuning at each block start.
+        """Forecast in time order, updating at each block start.
 
         Origins are grouped in blocks of `refit_every` time steps.
-        Before a block starting at time b, the model is fine-tuned
-        for `refit_steps` steps on windows whose targets are all
-        observed by b (targets in (b - refit_window, b]); the
-        updates accumulate, so the model follows the data through
-        the validation and then the test period, as a deployed
-        model would.
+        Before a block starting at time b, the model is updated on
+        windows whose targets are all observed by b, according to
+        `refit_mode` (see ``__init__``): `recent` windows have
+        targets in (b - refit_window, b]; for the early-stopped
+        modes, those in (b - refit_holdout, b] are held out.
         """
-        from xtft.nn.torch.trainer import TrainConfig, fit, predict
+        from xtft.nn.torch.trainer import predict
 
         h, k = ctx.horizon, len(ctx.quantiles)
         out = np.full((len(index), h, k), np.nan)
         times = index[:, 1]
         start = int(times.min())
-        n = ctx.panel.n_series
         for block in range(
             start, int(times.max()) + 1, self.refit_every
         ):
@@ -313,19 +336,50 @@ class XTFTAdapter:
             )
             if not rows.size:
                 continue
-            recent = ctx.panel.origins(
-                np.full(n, block - self.refit_window),
-                np.full(n, block + 1),
-                ctx.input_size,
-                h,
-                1,
+            self._update(ctx, block)
+            q = predict(self.model, self._windows(ctx, index[rows]))
+            out[rows] = q[:, :, 0, :]
+        return out
+
+    def _origins(self, ctx: RunContext, lo: int, hi: int):
+        """Origins whose targets lie in (lo, hi], every series."""
+        n = ctx.panel.n_series
+        return ctx.panel.origins(
+            np.full(n, lo),
+            np.full(n, hi + 1),
+            ctx.input_size,
+            ctx.horizon,
+            1,
+        )
+
+    def _holdout_loss(self, ctx: RunContext, ds) -> float:
+        import torch
+        from torch.utils.data import DataLoader
+
+        from xtft.compat.torch import resolve_device
+        from xtft.nn.torch.trainer import _evaluate
+
+        device = resolve_device("auto")
+        self.model.to(device)
+        loader = DataLoader(ds, ctx.batch_size, shuffle=False)
+        levels = torch.tensor(ctx.quantiles).tolist()
+        return _evaluate(self.model, loader, levels, device)
+
+    def _update(self, ctx: RunContext, block: int) -> None:
+        from xtft.nn.torch.models import XTFT
+        from xtft.nn.torch.trainer import TrainConfig, fit
+
+        seed = ctx.seed + self.refits + 1
+        if self.refit_mode == "finetune":
+            recent = self._origins(
+                ctx, block - self.refit_window, block
             )
             if len(recent):
                 cfg = TrainConfig(
                     max_epochs=1,
                     batch_size=ctx.batch_size,
                     patience=1,
-                    seed=ctx.seed + self.refits + 1,
+                    seed=seed,
                     steps_per_epoch=self.refit_steps,
                     lr=self.refit_lr,
                 )
@@ -337,9 +391,46 @@ class XTFTAdapter:
                     cfg,
                 )
                 self.refits += 1
-            q = predict(self.model, self._windows(ctx, index[rows]))
-            out[rows] = q[:, :, 0, :]
-        return out
+            return
+        cut = block - self.refit_holdout
+        train = self._origins(ctx, block - self.refit_window, cut)
+        hold = self._origins(ctx, cut, block)
+        if not len(train) or not len(hold):
+            return
+        train_ds = self._windows(ctx, train)
+        hold_ds = self._windows(ctx, hold)
+        if self.refit_mode == "finetune_es":
+            self.model.load_state_dict(self._base_state)
+            before = self._holdout_loss(ctx, hold_ds)
+            cfg = TrainConfig(
+                max_epochs=max(1, self.refit_steps // 25),
+                batch_size=ctx.batch_size,
+                patience=2,
+                seed=seed,
+                steps_per_epoch=25,
+                lr=self.refit_lr,
+            )
+            hist = fit(
+                self.model, train_ds, hold_ds, ctx.quantiles, cfg
+            )
+            if not hist["best_val_loss"] < before:
+                self.model.load_state_dict(self._base_state)
+                self.reverts += 1
+        else:  # retrain from scratch on the rolling window
+            import torch
+
+            torch.manual_seed(seed)
+            self.model = XTFT(*self._dims, **self._model_kw)
+            cfg = TrainConfig(
+                max_epochs=ctx.max_epochs,
+                batch_size=ctx.batch_size,
+                patience=ctx.patience,
+                seed=seed,
+                steps_per_epoch=ctx.steps_per_epoch,
+                lr=self.lr,
+            )
+            fit(self.model, train_ds, hold_ds, ctx.quantiles, cfg)
+        self.refits += 1
 
     def info(self) -> dict:
         return {
@@ -351,7 +442,10 @@ class XTFTAdapter:
                 "steps": self.refit_steps,
                 "window": self.refit_window,
                 "lr": self.refit_lr,
+                "mode": self.refit_mode,
+                "holdout": self.refit_holdout,
                 "updates": self.refits,
+                "reverted": self.reverts,
             },
         }
 
