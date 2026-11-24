@@ -219,6 +219,15 @@ class XTFTAdapter:
         # 107077); pass {"season": "auto"} or an int to enable it.
         kw["season"] = _auto_season(ctx, kw.get("season"))
         self.lr = float(kw.pop("lr", 1e-3))
+        # Periodic updating (off by default): fine-tune on recent
+        # data every `refit_every` time steps while forecasting.
+        self.refit_every = int(kw.pop("refit_every", 0))
+        self.refit_steps = int(kw.pop("refit_steps", 100))
+        self.refit_window = int(
+            kw.pop("refit_window", ctx.data.val_size)
+        )
+        self.refit_lr = float(kw.pop("refit_lr", 0.5 * self.lr))
+        self.refits = 0
         p = ctx.panel
         self.model = XTFT(
             p.static.shape[1],
@@ -261,24 +270,89 @@ class XTFTAdapter:
         )
         self.history = fit(self.model, train, val, ctx.quantiles, cfg)
 
-    def forecast(self, ctx: RunContext, index: np.ndarray):
-        from xtft.nn.torch.trainer import predict
-
-        ds = WindowDataset(
+    def _windows(self, ctx: RunContext, index: np.ndarray):
+        return WindowDataset(
             ctx.panel,
             index,
             ctx.input_size,
             ctx.horizon,
             fill_value=None if self.model.missing else 0.0,
         )
-        q = predict(self.model, ds)
-        return q[:, :, 0, :]  # single target
+
+    def forecast(self, ctx: RunContext, index: np.ndarray):
+        from xtft.nn.torch.trainer import predict
+
+        if not self.refit_every:
+            q = predict(self.model, self._windows(ctx, index))
+            return q[:, :, 0, :]  # single target
+        return self._forecast_updating(ctx, index)
+
+    def _forecast_updating(self, ctx: RunContext, index: np.ndarray):
+        """Forecast in time order, fine-tuning at each block start.
+
+        Origins are grouped in blocks of `refit_every` time steps.
+        Before a block starting at time b, the model is fine-tuned
+        for `refit_steps` steps on windows whose targets are all
+        observed by b (targets in (b - refit_window, b]); the
+        updates accumulate, so the model follows the data through
+        the validation and then the test period, as a deployed
+        model would.
+        """
+        from xtft.nn.torch.trainer import TrainConfig, fit, predict
+
+        h, k = ctx.horizon, len(ctx.quantiles)
+        out = np.full((len(index), h, k), np.nan)
+        times = index[:, 1]
+        start = int(times.min())
+        n = ctx.panel.n_series
+        for block in range(
+            start, int(times.max()) + 1, self.refit_every
+        ):
+            rows = np.flatnonzero(
+                (times >= block) & (times < block + self.refit_every)
+            )
+            if not rows.size:
+                continue
+            recent = ctx.panel.origins(
+                np.full(n, block - self.refit_window),
+                np.full(n, block + 1),
+                ctx.input_size,
+                h,
+                1,
+            )
+            if len(recent):
+                cfg = TrainConfig(
+                    max_epochs=1,
+                    batch_size=ctx.batch_size,
+                    patience=1,
+                    seed=ctx.seed + self.refits + 1,
+                    steps_per_epoch=self.refit_steps,
+                    lr=self.refit_lr,
+                )
+                fit(
+                    self.model,
+                    self._windows(ctx, recent),
+                    None,
+                    ctx.quantiles,
+                    cfg,
+                )
+                self.refits += 1
+            q = predict(self.model, self._windows(ctx, index[rows]))
+            out[rows] = q[:, :, 0, :]
+        return out
 
     def info(self) -> dict:
         return {
             "params": self.model.num_parameters(),
             "history": self.history,
             "model_kw": self.kw,
+            "refit": {
+                "every": self.refit_every,
+                "steps": self.refit_steps,
+                "window": self.refit_window,
+                "lr": self.refit_lr,
+                "updates": self.refits,
+            },
         }
 
 

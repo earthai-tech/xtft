@@ -225,7 +225,9 @@ class LEARAdapter:
     the penalty is chosen by AIC along the LARS path, then the
     LASSO is refitted at that penalty. The model is recalibrated
     for every forecast day on the preceding ``calibration_window``
-    days (default 728).
+    days (default 728); ``recalibrate_every`` (days) changes the
+    schedule, 0 calibrating once at the first day of each forecast
+    period (to compare with models trained once).
 
     LEAR gives point forecasts. Quantiles are the point plus
     ``z_tau * s_h``, with ``s_h`` the in-sample residual standard
@@ -242,6 +244,11 @@ class LEARAdapter:
             raise ValueError("LEAR needs hourly data and horizon 24.")
         kw = dict(ctx.model_kw)
         self.window = int(kw.pop("calibration_window", 728))
+        # 1: daily (benchmark protocol); k: every k days; 0: once at
+        # the first day of each forecast period (no recalibration).
+        self.every = int(kw.pop("recalibrate_every", 1))
+        if self.every < 0:
+            raise ValueError("recalibrate_every must be >= 0.")
         self.exog = [
             c
             for c in ctx.data.known
@@ -282,21 +289,19 @@ class LEARAdapter:
         mad = np.where(mad > 1e-12, mad, 1.0)
         return med, mad
 
-    def _predict_day(self, d: dict, day: int):
+    def _calibrate(self, d: dict, day: int) -> dict:
+        """Fit the 24 hourly LASSO models on days before `day`."""
         from sklearn.linear_model import Lasso, LassoLarsIC
 
         first = max(7, day - self.window)
         train = np.arange(first, day)
         x_raw = self._design(d, train)
-        x_new_raw = self._design(d, np.array([day]))
         dummies = slice(x_raw.shape[1] - 7, None)
         xm, xs = self._scaler(x_raw)
         xm[dummies], xs[dummies] = 0.0, 1.0
         x = np.arcsinh((x_raw - xm) / xs)
-        x_new = np.arcsinh((x_new_raw - xm) / xs)
         x[:, dummies] = x_raw[:, dummies]
-        x_new[:, dummies] = x_new_raw[:, dummies]
-        point, spread = np.empty(24), np.empty(24)
+        hours, spread = [], np.empty(24)
         for hour in range(24):
             target = d["price"][train, hour]
             ym, ys = self._scaler(target[:, None])
@@ -304,12 +309,34 @@ class LEARAdapter:
             alpha = LassoLarsIC(criterion="aic").fit(x, z).alpha_
             lasso = Lasso(alpha=max(alpha, 1e-6), max_iter=2500)
             lasso.fit(x, z)
-            back = np.sinh(lasso.predict(np.vstack([x, x_new])))
-            fitted = back * ys[0] + ym[0]
-            point[hour] = fitted[-1]
-            spread[hour] = np.std(target - fitted[:-1])
+            fitted = np.sinh(lasso.predict(x)) * ys[0] + ym[0]
+            spread[hour] = np.std(target - fitted)
+            hours.append((lasso, ym[0], ys[0]))
             self.fits += 1
-        return point, spread
+        return {
+            "xm": xm,
+            "xs": xs,
+            "dummies": dummies,
+            "hours": hours,
+            "spread": spread,
+        }
+
+    def _predict(self, state: dict, d: dict, day: int) -> np.ndarray:
+        """Point forecast of the 24 hours of `day`."""
+        x_raw = self._design(d, np.array([day]))
+        x = np.arcsinh((x_raw - state["xm"]) / state["xs"])
+        x[:, state["dummies"]] = x_raw[:, state["dummies"]]
+        return np.array(
+            [
+                np.sinh(lasso.predict(x)[0]) * ys + ym
+                for lasso, ym, ys in state["hours"]
+            ]
+        )
+
+    def _predict_day(self, d: dict, day: int):
+        """Calibrate on the days before `day` and forecast it."""
+        state = self._calibrate(d, day)
+        return self._predict(state, d, day), state["spread"]
 
     def fit(self, ctx) -> None:
         """Recalibrated for every forecast day in `forecast`."""
@@ -321,12 +348,26 @@ class LEARAdapter:
         z = stats.norm.ppf(np.asarray(ctx.quantiles))
         out = np.empty((len(index), 24, z.size))
         start = time.perf_counter()
-        for k, (i, t0) in enumerate(index):
-            if (t0 + 1) % 24:
-                raise ValueError("LEAR origins must be at 23:00.")
+        if np.any((index[:, 1] + 1) % 24):
+            raise ValueError("LEAR origins must be at 23:00.")
+        # Walk each series' forecast days in time order and
+        # recalibrate on the schedule (daily, every k days, or once
+        # at the first day of this forecast period).
+        order = np.lexsort((index[:, 1], index[:, 0]))
+        state, first_day, current = None, None, None
+        for k in order:
+            i, t0 = index[k]
+            day = (int(t0) + 1) // 24
+            if current != i:
+                current, state, first_day = i, None, day
             d = self.days[self.ids[int(i)]]
-            point, spread = self._predict_day(d, (t0 + 1) // 24)
-            out[k] = point[:, None] + spread[:, None] * z
+            due = state is None or (
+                self.every > 0 and (day - first_day) % self.every == 0
+            )
+            if due:
+                state = self._calibrate(d, day)
+            point = self._predict(state, d, day)
+            out[k] = point[:, None] + state["spread"][:, None] * z
         self.seconds += time.perf_counter() - start
         return _to_scaled(ctx, out, index)
 
@@ -335,6 +376,7 @@ class LEARAdapter:
         return {
             "params": 0,
             "calibration_window": self.window,
+            "recalibrate_every": self.every,
             "exogenous": self.exog,
             "lasso_fits": self.fits,
             "seconds": self.seconds,
