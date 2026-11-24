@@ -330,6 +330,16 @@ def _m5_store_dept_frame(directory: Path) -> pd.DataFrame:
     snap = x.drop_duplicates("ds")[
         ["ds", "snap_CA", "snap_TX", "snap_WI"]
     ]
+    # Full daily grid: a store and department with no item rows on
+    # a day (before its first listed item) sold nothing that day,
+    # and every series then shares the same calendar.
+    keys = sales[["store_id", "dept_id"]].drop_duplicates()
+    grid = keys.merge(
+        pd.DataFrame({"ds": np.sort(y["ds"].unique())}), how="cross"
+    )
+    sales = grid.merge(
+        sales, on=["store_id", "dept_id", "ds"], how="left"
+    ).fillna({"y": 0.0})
     out = sales.merge(
         price, on=["store_id", "dept_id", "ds"], how="left"
     )
