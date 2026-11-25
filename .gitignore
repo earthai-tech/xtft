@@ -34,3 +34,5 @@ paper/**/*.synctex.gz
 !/paper/figures/.gitkeep
 /paper/review/
 /jobs/site.env
+/paper/*.pdf
+/paper/*.zip
