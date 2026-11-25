@@ -1,22 +1,29 @@
-"""Cross-scale Temporal Fusion Transformer (XTFT), PyTorch.
+"""XTFT, covariate-aware probabilistic forecaster, PyTorch.
 
 XTFT forecasts :math:`H` future steps of :math:`O` targets for
 many related series that share three kinds of covariates: static
 attributes, observed past inputs and inputs known in advance. It
 keeps the gated, variable-selecting design of the Temporal Fusion
-Transformer (TFT) [1]_ and changes how the history is encoded:
+Transformer (TFT) [1]_ and adds:
 
-* the history is encoded at several resolutions, each obtained by
-  causal anti-aliasing and origin-aligned decimation
-  (:class:`~xtft.nn.torch.layers.MultiResolutionEncoder`) [2]_;
-* attention is hierarchical: causal attention with a learned soft
-  window inside each resolution
-  (:class:`~xtft.nn.torch.layers.LocalWindowAttention`), then
-  attention from every forecast step across all resolutions
+* reversible instance normalisation of each window, so series
+  whose level drifts outside the training range stay forecastable
+  (``instance_norm``);
+* native handling of missing past inputs: observation masks, time
+  since the last observation and learned decay (``missing``);
+* causal attention with a learned soft window over the encoded
+  history (:class:`~xtft.nn.torch.layers.LocalWindowAttention`),
+  then attention from every forecast step to it
   (:class:`~xtft.nn.torch.layers.CrossScaleAttention`) [3]_;
-* quantiles come from a monotone head
+* quantiles from a monotone head
   (:class:`~xtft.nn.torch.probabilistic.NonCrossingQuantileHead`),
   so predictive intervals never cross.
+
+An optional multi-resolution encoder adds coarser views of the
+history, obtained by causal anti-aliasing and origin-aligned
+decimation (:class:`~xtft.nn.torch.layers.MultiResolutionEncoder`)
+[2]_, with the decoder attending across scales; it is enabled by
+``scales=(1, 2, 4)`` and off by default.
 
 References
 ----------
@@ -97,7 +104,7 @@ class _GatedSkip(nn.Module):
 
 
 class XTFT(nn.Module):
-    r"""Cross-scale Temporal Fusion Transformer.
+    r"""Covariate-aware temporal fusion forecaster (XTFT).
 
     Parameters
     ----------

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xtft"
 version = "0.1.0.dev0"
-description = "Cross-Scale Temporal Fusion Transformers for calibrated probabilistic forecasting (PyTorch and TensorFlow backends)"
+description = "Covariate-aware probabilistic forecasting with calibrated, shift-robust uncertainty (PyTorch and TensorFlow backends)"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "earthai-tech", email = "etanoyau@gmail.com" }]

@@ -1,7 +1,7 @@
 <div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/_static/logo/xtft-logo-dark.svg">
-    <img src="docs/_static/logo/xtft-logo.svg" alt="XTFT: Cross-Scale Temporal Fusion Transformer" width="560"/>
+    <img src="docs/_static/logo/xtft-logo.svg" alt="XTFT: covariate-aware probabilistic forecasting with calibrated, shift-robust uncertainty" width="600"/>
   </picture>
   <br/>
   <em>Covariate-aware probabilistic forecasting that stays robust to shift and gaps, with predictive intervals and whole-path bands you can trust.</em>
@@ -48,6 +48,7 @@ data.
 | 📐 **Calibrated quantiles** | A monotone quantile head (quantiles never cross) and split-conformal calibration per horizon step, applied identically to any model. |
 | 🛰️ **Shift-robust intervals** | Adaptive conformal calibration re-estimates the interval margins causally as new observations arrive, keeping long-run coverage near nominal when the error distribution drifts after the calibration period. |
 | 🛤️ **Whole-path bands** | Conformal bands that contain the entire forecast path, not just each step, with a shift-adaptive version that updates causally as paths are observed. |
+| 🔄 **Safe updating** | In deployment, an anchored update fine-tunes from the trained weights, early-stops on the latest weeks and is kept only if it helps; repeated naive fine-tuning drifts. |
 | 🔍 **Interpretability** | Static, past and future variable weights come out of the forward pass. |
 | 🎚️ **Optional multi-resolution encoder** | Anti-aliased, origin-aligned coarse views of the history with cross-scale attention (`scales=(1, 2, 4)`); in our ablations it neither helped nor hurt, and `scales=(1,)` gives a smaller, equally accurate model. |
 
@@ -173,19 +174,46 @@ python benchmarks/aggregate.py results --metric crps_q --reference xtft
   Exchange, ILI and Weather; day-ahead electricity prices of five
   markets (`EPF-NP`, `EPF-PJM`, `EPF-BE`, `EPF-FR`, `EPF-DE`, open
   benchmark of Lago et al., 2021) with load and generation
-  forecasts as known-future covariates. Downloaded on first use
-  into `data/raw`.
+  forecasts as known-future covariates; M5 sales at the store x
+  department level (`M5-StoreDept`, 70 series) with prices, SNAP
+  days, events and static store/department/state attributes.
+  Downloaded on first use into `data/raw`.
 * **Gap study**: `--missing-rate`, `--missing-mode random|blocks`
   remove target values; models train on the gapped series and are
   scored on the clean one.
 * **Models**: `xtft`, any neuralforecast model as `nf:<Name>`
   (TFT, PatchTST, NHITS, DLinear, TiDE, NBEATSx, ...), any
-  statsforecast model as `sf:<Name>` (SeasonalNaive, AutoETS, ...).
-  Every model receives the covariates it supports.
+  statsforecast model as `sf:<Name>` (SeasonalNaive, AutoETS, ...),
+  a global LightGBM quantile model (`lgb`) and LEAR, the
+  recalibrated LASSO reference of the electricity price benchmark
+  (`lear`). Every model receives the covariates it supports.
+* **Updating**: `--model-kw '{"refit_every": 672, "refit_mode":
+  "finetune_es"}'` updates XTFT every four weeks during the test
+  period (`finetune`, `finetune_es` or `retrain`); LEAR takes
+  `recalibrate_every` (days, 0 = once).
 * **Protocol**: chronological train/validation/test periods, the
   same rolling origins, input length and optimisation budget for
   every learned model, conformal calibration fitted on validation
   forecasts, metrics before and after calibration, several seeds.
+  `benchmarks/recalibrate.py` re-scores saved forecasts with other
+  calibration settings or whole-path bands without refitting.
+
+### Headline results
+
+CRPS after calibration, mean over three seeds (lower is better);
+significance from Diebold-Mariano tests at 5% on every task.
+
+| Benchmark | XTFT | Best other model | Finding |
+|---|---|---|---|
+| EPF, 5 markets (H = 24) | 0.153 | LEAR daily 0.145; TFT 0.155 | best neural/tree model, never significantly worse than one |
+| EPF, monthly anchored update | 0.146 | LEAR daily 0.145 | within 1% of a model recalibrated every day |
+| M5 store x dept. (H = 28) | 0.417 | TFT 0.425 | significantly better than all nine baselines |
+| ETT, 16 tasks (univariate) | rank 2.6 | PatchTST rank 1.5 | specialised univariate models lead without covariates |
+
+Adaptive conformal calibration brings the per-step 80% coverage of
+every model on EPF within 1.3 points of nominal on average (18.8
+points before calibration), and adaptive whole-path bands cover
+77-83% of days at 80%, where per-step intervals cover at most 58%.
 
 On a SLURM cluster, `benchmarks/make_tasks.py` writes a task list and
 `jobs/bench_array.sbatch` runs it as a job array (see
@@ -204,7 +232,7 @@ src/xtft/
   compat/       version shims: numpy, pandas, scipy, sklearn, tf, torch
   api/ core/ utils/ metrics/ decorators.py exceptions.py
 benchmarks/     dataset registry, model adapters, runner, aggregation
-experiments/    ablations, subsidence case study
+experiments/    ablation notes
 jobs/           SLURM scripts (site settings in jobs/site.env)
 data/           local datasets (not versioned)
 docs/           documentation and logo

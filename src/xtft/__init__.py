@@ -1,8 +1,10 @@
-"""xtft: cross-scale Temporal Fusion Transformer for forecasting.
+"""xtft: covariate-aware probabilistic forecasting.
 
-xtft provides the XTFT model family with interchangeable PyTorch
-(default) and TensorFlow/Keras implementations, together with
-probabilistic metrics, data utilities and benchmark tooling.
+xtft provides the XTFT model family, a temporal fusion network
+robust to level shift and missing inputs, with interchangeable
+PyTorch (default) and TensorFlow/Keras implementations, together
+with probabilistic metrics, conformal calibration (per-step and
+whole-path), data utilities and benchmark tooling.
 
 Choose the framework with :func:`xtft.set_backend` or the
 ``XTFT_BACKEND`` environment variable before importing models from
