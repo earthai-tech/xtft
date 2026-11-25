@@ -119,10 +119,30 @@ def make_model_for_panel(**kw):
     )
 
 
+def _cpu_bf16_lstm_supported() -> bool:
+    """Whether this CPU runs an LSTM under bf16 autocast.
+
+    oneDNN builds bf16 LSTM kernels only on processors with the
+    required instructions (e.g. AVX-512 BF16 or AMX); elsewhere the
+    forward pass raises ``RuntimeError``. CI runners differ.
+    """
+    lstm = torch.nn.LSTM(4, 4, batch_first=True)
+    x = torch.randn(2, 3, 4)
+    try:
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            out, _ = lstm(x)
+        out.float().sum().backward()
+    except RuntimeError:
+        return False
+    return True
+
+
 @pytest.mark.parametrize("device", DEVICES)
 def test_bf16_autocast_trains(device):
     if device == "mps":
         pytest.skip("bf16 autocast support on MPS varies")
+    if device == "cpu" and not _cpu_bf16_lstm_supported():
+        pytest.skip("this CPU has no bf16 LSTM kernel (oneDNN)")
     train, test = panel_windows()
     model = make_model_for_panel()
     cfg = TrainConfig(

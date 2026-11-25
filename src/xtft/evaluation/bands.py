@@ -187,6 +187,15 @@ class SimultaneousConformalBand:
     approximate in a backtest; report :func:`path_coverage` on
     held-out data.
 
+    References
+    ----------
+    .. [1] Stankeviciute, K., Alaa, A. M. and van der Schaar, M.
+       (2021). Conformal time-series forecasting. Advances in Neural
+       Information Processing Systems 34 (NeurIPS 2021).
+    .. [2] Diquigiovanni, J., Fontana, M. and Vantini, S. (2022).
+       Conformal prediction bands for multivariate functional data.
+       Journal of Multivariate Analysis, 189, 104879.
+
     Examples
     --------
     >>> import numpy as np

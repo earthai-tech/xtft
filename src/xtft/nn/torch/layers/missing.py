@@ -136,6 +136,13 @@ class MissingValueDecay(nn.Module):
     usually the dominant period of the training data
     (:func:`xtft.data.dominant_periods`).
 
+    References
+    ----------
+    .. [1] Che, Z., Purushotham, S., Cho, K., Sontag, D. and Liu, Y.
+       (2018). Recurrent neural networks for multivariate time series
+       with missing values. Scientific Reports, 8, 6085.
+       https://doi.org/10.1038/s41598-018-24271-9
+
     Examples
     --------
     >>> import torch

@@ -1,110 +1,67 @@
 """Write the XTFT logo files to docs/_static/logo.
 
-The symbol (transparent background, light and dark variants) shows
-what the model does. Three input streams arrive from the left: the
-observed history (with a gap, handled natively), a covariate known
-in advance (dotted, it continues past the forecast origin) and a
-static attribute (a short bar). They meet at the forecast origin,
-where a per-step quantile fan opens inside a wider whole-path band
-(outlined). The converging inputs and the opening forecast draw
-the X of XTFT.
+The symbol, "Fusion X", draws the model as the letter X: three input
+strands arrive from the left (the observed series, a covariate
+known in advance, dotted, and a static attribute) and meet at the
+forecast origin, from which a quantile fan opens to the right, its
+pale outer wedge the calibrated band. Light and dark variants have
+a transparent background.
 
 Run: python tools/make_logo.py
 """
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docs/_static/logo"
 
 NAVY = "#14203a"
-ORIGIN = (136, 128)
 
-# Symbol colours on a light page and on a dark page.
+# Colours on a light page (False) and on a dark page (True).
 PALETTE = {
     False: {
         "ink": NAVY,
-        "series": "#0288d1",
+        "series": "#0277bd",
         "known": "#7e57c2",
-        "static": "#f59e0b",
-        "fan": "#1fa98d",
-        "band": NAVY,
+        "static": "#f29d0c",
+        "fan": "#12a58a",
+        "outer": "0.22",
         "text": NAVY,
-        "accent": "#0f8f76",
         "sub": "#56607a",
     },
     True: {
-        "ink": "#ffffff",
+        "ink": "#e6e9f2",
         "series": "#4fc3f7",
         "known": "#b39ddb",
         "static": "#ffb74d",
-        "fan": "#26c6a6",
-        "band": "#e8f5e9",
+        "fan": "#2fd3b2",
+        "outer": "0.4",
         "text": "#e6e9f2",
-        "accent": "#26c6a6",
         "sub": "#9aa3b8",
     },
 }
 
 
-def _history() -> tuple[str, str, tuple[float, float]]:
-    """Two pieces of the observed history, split by a gap."""
-    pts = []
-    for i in range(27):
-        x = 30 + i * 3.4
-        y = 92 + 7 * math.sin(0.75 * i) + 2 * math.sin(0.25 * i)
-        pts.append((x, y))
-    first = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts[:12])
-    second = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts[16:])
-    return first, second, pts[-1]
-
-
 def symbol(dark: bool = False) -> str:
-    """SVG elements of the symbol, transparent background."""
-    first, second, end = _history()
-    ox, oy = ORIGIN
-    ex, ey = end
+    """SVG elements of the symbol (256 x 256, transparent)."""
     c = PALETTE[dark]
-    return f"""<!-- forecast origin -->
-  <line x1="{ox}" y1="40" x2="{ox}" y2="216" stroke="{c["ink"]}"
-        stroke-opacity="0.3" stroke-width="2" stroke-dasharray="5 6"/>
-  <!-- whole-path band (outlined) and per-step fan -->
-  <path d="M{ox} {oy} C164 112 196 78 226 58 L226 198
-           C196 178 164 144 {ox} {oy} Z" fill="{c["band"]}"
-        fill-opacity="0.08" stroke="{c["band"]}" stroke-opacity="0.7"
-        stroke-width="2.5" stroke-linejoin="round"/>
-  <path d="M{ox} {oy} C166 118 196 100 226 90 L226 164
-           C196 154 166 138 {ox} {oy} Z" fill="{c["fan"]}"
-        fill-opacity="0.8"/>
-  <path d="M{ox} {oy} C166 126 196 132 226 124" fill="none"
-        stroke="{c["ink"]}" stroke-width="5" stroke-linecap="round"/>
-  <!-- observed history with a gap -->
-  <polyline points="{first}" fill="none" stroke="{c["series"]}"
-            stroke-width="4.5" stroke-linejoin="round"
-            stroke-linecap="round"/>
-  <polyline points="{second}" fill="none" stroke="{c["series"]}"
-            stroke-width="4.5" stroke-linejoin="round"
-            stroke-linecap="round"/>
-  <!-- covariate known in advance: continues past the origin -->
-  <path d="M30 166 C52 156 72 176 96 164 S126 158 {ox} {oy + 34}
-           S190 150 226 142" fill="none" stroke="{c["known"]}"
-        stroke-width="4" stroke-linecap="round" stroke-dasharray="1 8"/>
-  <!-- static attribute -->
-  <rect x="30" y="192" width="54" height="10" rx="5"
-        fill="{c["static"]}"/>
-  <!-- fusion at the origin -->
-  <g stroke="{c["ink"]}" stroke-opacity="0.85" stroke-width="3"
-     stroke-linecap="round">
-    <line x1="{ex:.1f}" y1="{ey:.1f}" x2="{ox}" y2="{oy}"/>
-    <line x1="96" y1="164" x2="{ox}" y2="{oy}"/>
-    <line x1="84" y1="197" x2="{ox}" y2="{oy}"/>
-  </g>
-  <circle cx="{ex:.1f}" cy="{ey:.1f}" r="4.5" fill="{c["series"]}"/>
-  <circle cx="96" cy="164" r="4.5" fill="{c["known"]}"/>
-  <circle cx="84" cy="197" r="4.5" fill="{c["static"]}"/>
-  <circle cx="{ox}" cy="{oy}" r="7.5" fill="{c["ink"]}"/>"""
+    return f"""<!-- quantile fan: outer band and inner interval -->
+  <path d="M128 128 L222 52 L222 204 Z" fill="{c["fan"]}"
+        fill-opacity="{c["outer"]}"/>
+  <path d="M128 128 L222 84 L222 172 Z" fill="{c["fan"]}"
+        fill-opacity="0.6"/>
+  <path d="M128 128 L222 128" stroke="{c["ink"]}" stroke-width="9"
+        stroke-linecap="round"/>
+  <!-- inputs: observed series, known covariate, static -->
+  <path d="M34 52 L128 128" stroke="{c["series"]}" stroke-width="13"
+        stroke-linecap="round"/>
+  <path d="M34 128 L128 128" stroke="{c["known"]}" stroke-width="13"
+        stroke-linecap="round" stroke-dasharray="1 20"/>
+  <path d="M34 204 L128 128" stroke="{c["static"]}" stroke-width="13"
+        stroke-linecap="round"/>
+  <!-- forecast origin -->
+  <circle cx="128" cy="128" r="13" fill="{c["ink"]}"/>"""
 
 
 def logo(dark: bool) -> str:
@@ -113,16 +70,13 @@ def logo(dark: bool) -> str:
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 220" width="860" height="220" role="img" aria-labelledby="t d">
   <title id="t">XTFT</title>
   <desc id="d">XTFT: covariate-aware probabilistic forecasting with calibrated, shift-robust uncertainty</desc>
-  <!-- Generated by tools/make_logo.py. Symbol: history (with a
-       gap), a known covariate and a static attribute meet at the
-       forecast origin; a quantile fan opens inside a whole-path
-       band. -->
-  <g transform="translate(14 14) scale(0.75)">
+  <!-- Generated by tools/make_logo.py ("Fusion X"). -->
+  <g transform="translate(10 12) scale(0.77)">
   {symbol(dark)}
   </g>
   <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
-    <text x="236" y="118" font-size="104" font-weight="700" letter-spacing="6" fill="{c["text"]}"><tspan fill="{c["static"]}">X</tspan>TFT</text>
-    <rect x="240" y="138" width="92" height="6" rx="3" fill="{c["accent"]}"/>
+    <text x="236" y="118" font-size="104" font-weight="700" letter-spacing="6" fill="{c["text"]}">XTFT</text>
+    <rect x="240" y="138" width="92" height="6" rx="3" fill="{c["fan"]}"/>
     <text x="240" y="178" font-size="25" font-weight="600" fill="{c["text"]}">Covariate-aware probabilistic forecasting</text>
     <text x="240" y="208" font-size="19" fill="{c["sub"]}">calibrated, shift-robust uncertainty for whole forecast paths</text>
   </g>

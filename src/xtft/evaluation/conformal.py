@@ -79,6 +79,12 @@ def conformal_margin(scores: ArrayLike, alpha: float) -> float:
     :math:`P(E_{n+1} \le \hat Q) \ge 1 - \alpha` with
     :math:`\hat Q` the value returned here [1]_.
 
+    References
+    ----------
+    .. [1] Romano, Y., Patterson, E. and Candes, E. (2019).
+       Conformalized quantile regression. Advances in Neural
+       Information Processing Systems 32 (NeurIPS 2019).
+
     Examples
     --------
     >>> from xtft.evaluation import conformal_margin
@@ -151,6 +157,16 @@ class ConformalQuantileCalibrator:
     may drift, so the guarantee is approximate: calibrate on the
     most recent validation window before the test period, and
     report the empirical test coverage.
+
+    References
+    ----------
+    .. [1] Romano, Y., Patterson, E. and Candes, E. (2019).
+       Conformalized quantile regression. Advances in Neural
+       Information Processing Systems 32 (NeurIPS 2019).
+    .. [2] Chernozhukov, V., Fernandez-Val, I. and Galichon, A. (2010).
+       Quantile and probability curves without crossing.
+       Econometrica, 78(3), 1093-1125.
+       https://doi.org/10.3982/ECTA7880
 
     Examples
     --------

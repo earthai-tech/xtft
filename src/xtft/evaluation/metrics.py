@@ -265,6 +265,13 @@ def crps_from_quantiles(
     ``0.05, 0.10, ..., 0.95``); with three levels it is a coarse
     proxy and should be labelled as such.
 
+    References
+    ----------
+    .. [1] Gneiting, T. and Raftery, A. E. (2007). Strictly proper
+       scoring rules, prediction, and estimation. Journal of the
+       American Statistical Association, 102(477), 359-378.
+       https://doi.org/10.1198/016214506000001437
+
     Examples
     --------
     >>> from xtft.evaluation import crps_from_quantiles
@@ -369,6 +376,13 @@ def interval_score(
     a proper score that rewards narrow intervals and penalises
     misses in proportion to their distance. Dividing by
     :func:`seasonal_scale` gives the MSIS.
+
+    References
+    ----------
+    .. [1] Gneiting, T. and Raftery, A. E. (2007). Strictly proper
+       scoring rules, prediction, and estimation. Journal of the
+       American Statistical Association, 102(477), 359-378.
+       https://doi.org/10.1198/016214506000001437
 
     Examples
     --------

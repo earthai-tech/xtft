@@ -51,6 +51,13 @@ class GatedLinearUnit(nn.Module):
     network suppress a whole branch, which is how XTFT can switch
     off components that do not help on a given dataset.
 
+    References
+    ----------
+    .. [2] Dauphin, Y. N., Fan, A., Auli, M. and Grangier, D. (2017).
+       Language modeling with gated convolutional networks.
+       Proceedings of the 34th International Conference on Machine
+       Learning (ICML), PMLR 70, 933-941.
+
     Examples
     --------
     >>> import torch
@@ -122,6 +129,14 @@ class GatedResidualNetwork(nn.Module):
     sizes agree and a learned projection otherwise. A context of
     shape ``(B, C)`` is broadcast over the time axis of a
     ``(B, T, d)`` input.
+
+    References
+    ----------
+    .. [1] Lim, B., Arik, S. O., Loeff, N. and Pfister, T. (2021).
+       Temporal Fusion Transformers for interpretable multi-horizon
+       time series forecasting. International Journal of
+       Forecasting, 37(4), 1748-1764.
+       https://doi.org/10.1016/j.ijforecast.2021.03.012
 
     Examples
     --------
