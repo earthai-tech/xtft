@@ -36,3 +36,8 @@ paper/**/*.synctex.gz
 /jobs/site.env
 /paper/*.pdf
 /paper/*.zip
+/docs/_build/
+/docs/generated/
+coverage.xml
+.coverage
+htmlcov/

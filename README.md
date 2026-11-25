@@ -6,6 +6,11 @@
   <br/>
   <em>Covariate-aware probabilistic forecasting that stays robust to shift and gaps, with predictive intervals and whole-path bands you can trust.</em>
   <br/><br/>
+  <a href="https://github.com/earthai-tech/xtft/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/earthai-tech/xtft/actions/workflows/tests.yml/badge.svg?branch=dev"/></a>
+  <a href="https://github.com/earthai-tech/xtft/actions/workflows/lint.yml"><img alt="Lint" src="https://github.com/earthai-tech/xtft/actions/workflows/lint.yml/badge.svg?branch=dev"/></a>
+  <a href="https://github.com/earthai-tech/xtft/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/earthai-tech/xtft/actions/workflows/docs.yml/badge.svg?branch=dev"/></a>
+  <a href="https://codecov.io/gh/earthai-tech/xtft"><img alt="Coverage" src="https://codecov.io/gh/earthai-tech/xtft/branch/dev/graph/badge.svg"/></a>
+  <br/>
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange"/>
   <img alt="Version" src="https://img.shields.io/badge/version-0.1.0.dev0-blueviolet"/>
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img alt="License: BSD-3-Clause" src="https://img.shields.io/badge/license-BSD--3--Clause-blue"/></a>
@@ -239,8 +244,26 @@ docs/           documentation and logo
 tests/          pytest suite (with doctests of the public modules)
 ```
 
-Run the tests with `pytest`; the code follows the numpydoc
-convention and is checked with `ruff`.
+Run the tests with `pytest` (coverage: `pip install -e
+".[torch,test]"`, then `pytest --cov=xtft`); the code follows the
+numpydoc convention and is checked with `ruff`. Build the
+documentation with `pip install -e ".[torch,docs]"` and
+`sphinx-build -b html docs docs/_build/html`.
+
+### Continuous integration and releases
+
+GitHub Actions run on every push to `dev` and `master` and on pull
+requests:
+
+| Workflow | What it does |
+|---|---|
+| `tests.yml` | pytest with coverage on Python 3.10-3.12 (Linux) and 3.12 (Windows, macOS), CPU PyTorch; Keras backend tests on `master`, weekly and on demand; coverage to Codecov |
+| `lint.yml` | `ruff check` and `ruff format --check` |
+| `docs.yml` | Sphinx build with warnings as errors; deployed to GitHub Pages from `master` and version tags |
+| `release.yml` | on a `vX.Y.Z` tag: build, check the tag against `pyproject.toml`, test the wheel, publish (final versions to PyPI, pre-releases to TestPyPI) and create the GitHub release |
+
+To release: set `version` in `pyproject.toml`, merge into `master`,
+then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 ## 📖 Citing
 

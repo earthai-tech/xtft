@@ -1,0 +1,113 @@
+name: Tests
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly run against the latest dependency releases.
+    - cron: "0 3 * * 1"
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  torch:
+    name: PyTorch / py${{ matrix.python }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.10", "3.11", "3.12"]
+        include:
+          - os: windows-latest
+            python: "3.12"
+          - os: macos-latest
+            python: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install PyTorch (CPU build)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            pip install "torch>=2.1"
+          else
+            pip install "torch>=2.1" \
+              --index-url https://download.pytorch.org/whl/cpu
+          fi
+
+      - name: Install xtft
+        run: pip install -e ".[torch,test]"
+
+      - name: Run tests with coverage
+        run: >
+          pytest --cov=xtft --cov-report=xml --cov-report=term
+          --cov-fail-under=85
+
+      - name: Coverage summary
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        shell: bash
+        run: |
+          {
+            echo "### Coverage (maintained modules)"
+            echo '```'
+            coverage report --format=text | tail -n 25
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Upload to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  tensorflow:
+    # The Keras backend is heavy: run it on master, weekly and on
+    # demand, not on every push to dev.
+    name: TensorFlow backend
+    if: >
+      github.event_name != 'push' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install xtft with both backends
+        run: |
+          python -m pip install --upgrade pip
+          pip install "torch>=2.1" \
+            --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[torch,tf,test]"
+
+      - name: Run backend tests
+        run: pytest tests/test_backends.py tests/test_tf_models_smoke.py
