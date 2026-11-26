@@ -411,10 +411,171 @@ def _load_m5(name: str) -> BenchmarkData:
     )
 
 
+# CAMELS-US catchments from Caravan (Kratzert et al., 2023; Zenodo
+# record 10968468, CC-BY-4.0): daily streamflow (mm/day) with
+# ERA5-Land meteorology and static catchment attributes.
+_CAMELS_START, _CAMELS_END = "1981-10-01", "2014-09-30"
+_CAMELS_MET = (
+    "total_precipitation_sum",
+    "potential_evaporation_sum",
+    "temperature_2m_mean",
+    "temperature_2m_min",
+    "temperature_2m_max",
+    "snow_depth_water_equivalent_mean",
+    "surface_net_solar_radiation_mean",
+    "volumetric_soil_water_layer_1_mean",
+)
+# Weather known in advance in the oracle scenario.
+_CAMELS_FUTURE = (
+    "total_precipitation_sum",
+    "potential_evaporation_sum",
+    "temperature_2m_mean",
+)
+_CAMELS_STATIC = (
+    "p_mean",
+    "pet_mean",
+    "aridity",
+    "frac_snow",
+    "moisture_index",
+    "seasonality",
+    "high_prec_freq",
+    "high_prec_dur",
+    "low_prec_freq",
+    "low_prec_dur",
+    "log_area",
+    "ele_mt_sav",
+    "slp_dg_sav",
+    "for_pc_sse",
+    "cly_pc_sav",
+    "snd_pc_sav",
+)
+# Basins kept: at least this share of observed streamflow days.
+_CAMELS_MIN_OBSERVED = 0.9
+
+
+def _caravan_root() -> Path:
+    """Folder holding Caravan's ``attributes`` and ``timeseries``."""
+    base = Path(
+        os.environ.get("XTFT_CARAVAN", _data_dir() / "caravan")
+    )
+    hits = sorted(base.glob("**/attributes/camels"))
+    if not hits:
+        raise FileNotFoundError(
+            f"Caravan CAMELS-US files not found under {base}; set "
+            "XTFT_CARAVAN to the extracted Caravan folder."
+        )
+    return hits[0].parent.parent
+
+
+def camels_attributes() -> pd.DataFrame:
+    """Return static attributes and gauge locations of the basins.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per basin, indexed by ``gauge_id``, with the
+        Caravan climate indices, HydroATLAS attributes, ``area``
+        (km^2), ``log_area``, ``gauge_lat`` and ``gauge_lon``.
+    """
+    root = _caravan_root() / "attributes" / "camels"
+    tables = [
+        pd.read_csv(root / f"attributes_{part}_camels.csv").set_index(
+            "gauge_id"
+        )
+        for part in ("caravan", "hydroatlas", "other")
+    ]
+    attrs = pd.concat(tables, axis=1)
+    log_area = np.log(attrs["area"].astype(float)).rename("log_area")
+    return pd.concat([attrs, log_area], axis=1)
+
+
+def _camels_frame() -> pd.DataFrame:
+    """Long frame of all basins, cached as parquet on first use."""
+    cache = _data_dir() / "camels_us.parquet"
+    if cache.exists():
+        return pd.read_parquet(cache)
+    root = _caravan_root() / "timeseries" / "csv" / "camels"
+    cols = ["date", *_CAMELS_MET, "streamflow"]
+    frames = []
+    for path in sorted(root.glob("camels_*.csv")):
+        d = pd.read_csv(path, usecols=cols, parse_dates=["date"])
+        period = (d["date"] >= _CAMELS_START) & (
+            d["date"] <= _CAMELS_END
+        )
+        d = d[period]
+        d.insert(0, "unique_id", path.stem)
+        frames.append(d)
+    df = pd.concat(frames, ignore_index=True)
+    df = df.rename(columns={"date": "ds", "streamflow": "y"})
+    df.to_parquet(cache, index=False)
+    return df
+
+
+def _load_camels(name: str) -> BenchmarkData:
+    """Daily streamflow of the CAMELS-US basins (flood forecasting).
+
+    Daily streamflow (mm/day) of the CAMELS-US catchments in
+    Caravan, water years 1982-2014 (1981-10-01 to 2014-09-30),
+    for basins with at least 90% observed days. Past covariates:
+    eight ERA5-Land meteorological series; static covariates:
+    climate indices and catchment attributes, standardised across
+    basins; known covariates: day-of-year encodings and, for
+    ``CAMELS-US-Weather`` only, the observed precipitation,
+    potential evaporation and temperature of the forecast days (an
+    oracle-weather scenario that bounds what a perfect weather
+    forecast could add). Missing streamflow stays ``NaN``.
+    Test: water years 2010-2014 (1826 days); validation: water
+    years 2006-2009 (1461 days).
+    """
+    from xtft.data import add_calendar_features
+
+    raw = _camels_frame()
+    share = raw.groupby("unique_id")["y"].apply(
+        lambda s: s.notna().mean()
+    )
+    keep = share.index[share >= _CAMELS_MIN_OBSERVED]
+    df = raw[raw["unique_id"].isin(keep)].copy()
+    df, calendar = add_calendar_features(df, features=("dayofyear",))
+
+    attrs = camels_attributes().loc[keep]
+    static = [c for c in _CAMELS_STATIC if c in attrs.columns]
+    z = attrs[static].astype(float)
+    z = (z - z.mean()) / z.std(ddof=0).replace(0.0, 1.0)
+    df = df.join(z, on="unique_id")
+
+    known = tuple(calendar)
+    if name == "CAMELS-US-Weather":
+        for col in _CAMELS_FUTURE:
+            df[f"{col}_future"] = df[col]
+        known += tuple(f"{c}_future" for c in _CAMELS_FUTURE)
+    return BenchmarkData(
+        name=name,
+        df=df,
+        freq="D",
+        season=365,
+        val_size=1461,
+        test_size=1826,
+        horizons=(7,),
+        static=tuple(static),
+        past=_CAMELS_MET,
+        known=known,
+        val_stride=7,
+    )
+
+
 def available() -> list[str]:
     """Names accepted by :func:`load`."""
     epf = [f"EPF-{m}" for m in _EPF_MARKETS]
-    return sorted([*_LONG_HORIZON, *epf, "M5-StoreDept", "Synthetic"])
+    return sorted(
+        [
+            *_LONG_HORIZON,
+            *epf,
+            "M5-StoreDept",
+            "Synthetic",
+            "CAMELS-US",
+            "CAMELS-US-Weather",
+        ]
+    )
 
 
 def load(name: str) -> BenchmarkData:
@@ -442,6 +603,8 @@ def load(name: str) -> BenchmarkData:
         data = _load_m5(name)
     elif name == "Synthetic":
         data = _load_synthetic(name)
+    elif name in ("CAMELS-US", "CAMELS-US-Weather"):
+        data = _load_camels(name)
     else:
         raise KeyError(f"Unknown dataset {name!r}; see {available()}.")
     logger.info(

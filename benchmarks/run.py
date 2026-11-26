@@ -35,6 +35,7 @@ import os
 import platform
 import sys
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -104,7 +105,10 @@ def _window_losses(y, q, quantiles) -> dict:
     tau = np.asarray(quantiles)
     diff = y[..., None] - q
     pin = np.maximum(tau * diff, (tau - 1.0) * diff)
-    with np.errstate(invalid="ignore"):
+    # Windows whose targets are all missing (gauge gaps) give NaN;
+    # the Diebold-Mariano tests drop them.
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
         crps = 2.0 * np.nanmean(pin, axis=(1, 2))
         med = q[..., int(np.argmin(np.abs(tau - 0.5)))]
         ae = np.nanmean(np.abs(y - med), axis=1)
@@ -297,6 +301,12 @@ def main(argv=None) -> dict:
         panel = PanelData.from_frame(
             data.df if args.ffill_all else gapped, spec
         )
+    elif data.df["y"].isna().any():
+        # Natural gaps (e.g. streamflow gauges): XTFT receives them
+        # as NaN, the other models the forward-filled series, and
+        # scores use the observed values only.
+        panel = PanelData.from_frame(data.df, spec)
+        data.df = forward_fill(data.df)
     else:
         panel = PanelData.from_frame(data.df, spec)
     lengths = np.array([len(t) for t in panel.times])
