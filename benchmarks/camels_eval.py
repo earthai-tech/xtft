@@ -100,62 +100,79 @@ def warning_skill(event: np.ndarray, warn: np.ndarray) -> dict:
     }
 
 
-def evaluate_run(path: Path, ids: list[str]) -> list[dict]:
-    """Per-basin metrics of one saved run."""
-    z = np.load(path)
-    levels = [float(t) for t in z["quantiles"]]
-    lo80, hi80 = levels.index(0.1), levels.index(0.9)
-    hi90 = levels.index(0.95)
-    med = int(np.argmin(np.abs(np.asarray(levels) - 0.5)))
-    y_val, q_val = z["y_val"], z["q_val"]
-    y, q = z["y_test"], z["q_test"]
-    series, times = z["test_index"][:, 0], z["test_index"][:, 1]
-
-    q = (
-        AdaptiveConformalCalibrator(levels, gamma=GAMMA)
-        .fit(y_val, q_val)
-        .transform(y, q, times)
-    )
-    band = SimultaneousConformalBand(levels, coverage=0.9, base=0.9)
-    b_lo, b_hi = band.fit(y_val, q_val).transform_online(
-        y, q, times, gamma=GAMMA
-    )
-
-    tau = np.asarray(levels)
+def weekly_crps(y, q, tau) -> np.ndarray:
+    """CRPS of each forecast week; NaN when no flow is observed."""
     diff = y[..., None] - q
-    # Weeks with no observed flow give NaN and are skipped below.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        crps_w = 2.0 * np.nanmean(
+        return 2.0 * np.nanmean(
             np.maximum(tau * diff, (tau - 1.0) * diff), axis=(1, 2)
         )
-    in80 = (y >= q[..., lo80]) & (y <= q[..., hi80])
-    observed = np.isfinite(y)
-    path_ok = ((y >= b_lo) & (y <= b_hi)) | ~observed
 
-    rows = []
+
+def evaluate_run(
+    path: Path, ids: list[str]
+) -> tuple[list[dict], pd.DataFrame]:
+    """Per-basin metrics and weekly CRPS of one saved run.
+
+    Calibration is done separately for each basin: adaptive
+    conformal inference and the whole-week band are fitted on the
+    basin's own validation weeks and updated along its test weeks.
+    Pooling all basins would apply one update per basin and day at
+    every origin, multiplying the effective step size by the number
+    of basins and making the intervals over-cover.
+    """
+    z = np.load(path)
+    levels = [float(t) for t in z["quantiles"]]
+    tau = np.asarray(levels)
+    lo80, hi80 = levels.index(0.1), levels.index(0.9)
+    hi90 = levels.index(0.95)
+    med = int(np.argmin(np.abs(tau - 0.5)))
+    y_val, q_val = z["y_val"], z["q_val"]
+    y_all, q_all = z["y_test"], z["q_test"]
+    series, times = z["test_index"][:, 0], z["test_index"][:, 1]
     val_series = z["val_index"][:, 0]
+
+    rows, weekly = [], []
     for s in np.unique(series):
-        m = series == s
+        m, mv = series == s, val_series == s
         order = np.argsort(times[m])
-        yb = y[m][order].ravel()
-        fb = q[m][order][..., med].ravel()
-        thr = np.nanpercentile(y_val[val_series == s], 95)
-        has_obs = observed[m].any(axis=1)
-        event = (np.nan_to_num(y[m], nan=-np.inf) > thr).any(axis=1)
+        t = times[m][order]
+        y, q = y_all[m][order], q_all[m][order]
+        yv, qv = y_val[mv], q_val[mv]
+        qa = (
+            AdaptiveConformalCalibrator(levels, gamma=GAMMA)
+            .fit(yv, qv)
+            .transform(y, q, t)
+        )
+        band = SimultaneousConformalBand(
+            levels, coverage=0.9, base=0.9
+        )
+        b_lo, b_hi = band.fit(yv, qv).transform_online(
+            y, q, t, gamma=GAMMA
+        )
+        observed = np.isfinite(y)
+        has_obs = observed.any(axis=1)
+        in80 = (y >= qa[..., lo80]) & (y <= qa[..., hi80])
+        path_ok = ((y >= b_lo) & (y <= b_hi)) | ~observed
+        crps_raw = weekly_crps(y, q, tau)
+        crps_aci = weekly_crps(y, qa, tau)
+
+        thr = np.nanpercentile(yv, 95)
+        event = (np.nan_to_num(y, nan=-np.inf) > thr).any(axis=1)
         rules = {
-            "median": (q[m][..., med] > thr).any(axis=1),
-            "step90": (q[m][..., hi90] > thr).any(axis=1),
-            "band90": (b_hi[m] > thr).any(axis=1),
+            "median": (qa[..., med] > thr).any(axis=1),
+            "step90": (qa[..., hi90] > thr).any(axis=1),
+            "band90": (b_hi > thr).any(axis=1),
         }
+        basin = ids[int(s)]
         row = {
-            "basin": ids[int(s)],
-            "nse": nse(yb, fb),
-            "crps": float(np.nanmean(crps_w[m])),
-            "cov80_step": float(in80[m][observed[m]].mean()),
-            "cov90_path": float(
-                path_ok[m][has_obs].all(axis=1).mean()
-            ),
+            "basin": basin,
+            "nse": nse(y.ravel(), qa[..., med].ravel()),
+            "crps_raw": float(np.nanmean(crps_raw)),
+            "crps": float(np.nanmean(crps_aci)),
+            "cov80_step": float(in80[observed].mean()),
+            "cov90_path": float(path_ok[has_obs].all(axis=1).mean()),
             "n_weeks": int(has_obs.sum()),
             "n_floods": int(event[has_obs].sum()),
         }
@@ -164,7 +181,10 @@ def evaluate_run(path: Path, ids: list[str]) -> list[dict]:
             for k, v in sk.items():
                 row[f"{rule}_{k}"] = v
         rows.append(row)
-    return rows
+        weekly.append(
+            pd.DataFrame({"basin": basin, "time": t, "crps": crps_aci})
+        )
+    return rows, pd.concat(weekly, ignore_index=True)
 
 
 def summarise(basins: pd.DataFrame) -> pd.DataFrame:
@@ -174,6 +194,7 @@ def summarise(basins: pd.DataFrame) -> pd.DataFrame:
     out = g.agg(
         nse_median=("nse", "median"),
         nse_mean=("nse", "mean"),
+        crps_raw=("crps_raw", "mean"),
         crps=("crps", "mean"),
         cov80_step=("cov80_step", "mean"),
         cov90_path=("cov90_path", "mean"),
@@ -200,7 +221,7 @@ def main(argv=None) -> None:
     )
     args.out.mkdir(parents=True, exist_ok=True)
     ids_cache: dict[str, list[str]] = {}
-    rows = []
+    rows, weekly = [], []
     for root in args.roots:
         for jpath in sorted(root.glob("CAMELS-US*.json")):
             res = json.loads(jpath.read_text())
@@ -215,16 +236,19 @@ def main(argv=None) -> None:
                 f"/{res['tag']}" if res.get("tag") else ""
             )
             logger.info("%s", jpath.name)
-            for r in evaluate_run(ppath, ids_cache[name]):
-                rows.append(
-                    {
-                        "dataset": name,
-                        "model": label,
-                        "seed": res["seed"],
-                        **r,
-                    }
-                )
+            run = {
+                "dataset": name,
+                "model": label,
+                "seed": res["seed"],
+            }
+            per_basin, week = evaluate_run(ppath, ids_cache[name])
+            rows += [{**run, **r} for r in per_basin]
+            weekly.append(week.assign(**run))
     basins = pd.DataFrame(rows)
+    # Weekly CRPS per basin for the Diebold-Mariano tests.
+    pd.concat(weekly, ignore_index=True).to_parquet(
+        args.out / "camels_weekly.parquet", index=False
+    )
     attrs = datasets.camels_attributes()[["gauge_lat", "gauge_lon"]]
     basins = basins.join(attrs, on="basin")
     basins.to_csv(args.out / "camels_basins.csv", index=False)
