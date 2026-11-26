@@ -11,7 +11,8 @@
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img alt="License: BSD-3-Clause" src="https://img.shields.io/badge/license-BSD--3--Clause-blue"/></a>
 </div>
 
-**XTFT** forecasts many related time series at once, with quantiles
+**XTFT**, the eXogenous-aware Temporal Fusion Transformer,
+forecasts many related time series at once, with quantiles
 you can trust. It uses static attributes, past observations and
 covariates known in advance; it stays stable when the level of a
 series drifts or inputs go missing; and its calibration layer turns

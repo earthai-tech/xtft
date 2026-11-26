@@ -1,4 +1,4 @@
-"""XTFT, covariate-aware probabilistic forecaster, PyTorch.
+"""XTFT, eXogenous-aware Temporal Fusion Transformer, PyTorch.
 
 XTFT forecasts :math:`H` future steps of :math:`O` targets for
 many related series that share three kinds of covariates: static
@@ -104,7 +104,7 @@ class _GatedSkip(nn.Module):
 
 
 class XTFT(nn.Module):
-    r"""Covariate-aware temporal fusion forecaster (XTFT).
+    r"""eXogenous-aware Temporal Fusion Transformer (XTFT).
 
     Parameters
     ----------
