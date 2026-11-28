@@ -102,6 +102,17 @@ html_logo = "_static/logo/xtft-symbol.svg"
 html_favicon = "_static/logo/xtft-symbol.svg"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+# Version switcher. Every published version reads the list of the
+# "latest" build, so a new release only needs an entry in
+# _static/switcher.json (and the version activated on Read the
+# Docs). Read the Docs sets READTHEDOCS_VERSION to the slug of the
+# version being built ("latest", "stable", "dev", "v0.1.0"); local
+# builds use "dev".
+SWITCHER_URL = (
+    "https://xtft.readthedocs.io/en/latest/_static/switcher.json"
+)
+switcher_version = os.environ.get("READTHEDOCS_VERSION", "dev")
+
 html_theme_options = {
     "logo": {
         "text": "XTFT",
@@ -110,7 +121,20 @@ html_theme_options = {
     },
     "github_url": "https://github.com/earthai-tech/xtft",
     "navbar_align": "left",
-    "navbar_end": ["theme-switcher", "navbar-icon-links"],
+    "switcher": {
+        "json_url": SWITCHER_URL,
+        "version_match": switcher_version,
+    },
+    # The list is read from the published site; a build made before
+    # it is online must not fail on the warning.
+    "check_switcher": False,
+    # Warn readers of an older or development version.
+    "show_version_warning_banner": True,
+    "navbar_end": [
+        "version-switcher",
+        "theme-switcher",
+        "navbar-icon-links",
+    ],
     "show_toc_level": 2,
     "navigation_with_keys": False,
     "use_edit_page_button": True,

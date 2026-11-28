@@ -84,3 +84,9 @@ Releasing
 1. Set ``version`` in ``pyproject.toml``, update
    :doc:`/changelog`, and merge ``dev`` into ``master``.
 2. Tag and push: ``git tag vX.Y.Z && git push origin vX.Y.Z``.
+3. Documentation versions: Read the Docs builds ``latest``
+   (``master``), ``dev`` and every tag. For the first release,
+   activate ``stable`` on Read the Docs and make it the preferred
+   entry of ``docs/_static/switcher.json``; the version switcher of
+   every published version reads that list from the ``latest``
+   build.

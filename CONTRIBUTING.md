@@ -50,3 +50,11 @@ Repository secrets (Settings > Secrets and variables > Actions):
    TestPyPI only.
 3. Tag the final version: `git tag vX.Y.Z && git push origin vX.Y.Z`.
    It goes to TestPyPI, then PyPI.
+4. Documentation versions: Read the Docs builds `latest` (master),
+   `dev` and every tag. For the first release, activate the `stable`
+   version on Read the Docs and add it to
+   `docs/_static/switcher.json` as the preferred entry, e.g.
+   `{"name": "0.1.0 (stable)", "version": "stable",
+   "url": "https://xtft.readthedocs.io/en/stable/", "preferred": true}`
+   (and remove `"preferred"` from `latest`). The switcher of every
+   published version reads this list from the `latest` build.
