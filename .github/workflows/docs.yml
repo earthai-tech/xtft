@@ -1,19 +1,16 @@
 name: Docs
 
-# Read the Docs builds and hosts the site from .readthedocs.yaml.
-# This workflow checks every change: the pages must build with
-# warnings as errors. On master the example gallery is executed as
-# on Read the Docs; elsewhere it is skipped to save time. After a
-# push, an optional job asks Read the Docs to rebuild, for projects
-# whose webhook is not set up (private repositories): add the
-# secret READTHEDOCS_TOKEN (readthedocs.org > Account settings >
-# API tokens) to enable it.
+# Build the documentation on every push to master, the main branch.
+# The pages must build with warnings as errors and the example
+# gallery is executed, as on Read the Docs, which builds and hosts
+# the site from .readthedocs.yaml. A second job then asks Read the
+# Docs to rebuild "latest", for projects whose webhook is not set
+# up (private repositories): add the secret READTHEDOCS_TOKEN
+# (readthedocs.org > Account settings > API tokens) to enable it.
 
 on:
   push:
-    branches: [master, dev]
-    tags: ["v*"]
-  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
@@ -46,10 +43,6 @@ jobs:
 
       - name: Build HTML (warnings are errors)
         env:
-          # Run the gallery on master and tags, as Read the Docs does.
-          XTFT_DOCS_NO_EXAMPLES: >-
-            ${{ (github.ref == 'refs/heads/master' ||
-                 startsWith(github.ref, 'refs/tags/v')) && '' || '1' }}
           MPLBACKEND: Agg
         run: sphinx-build -b html -W --keep-going docs docs/_build/html
 
@@ -63,31 +56,22 @@ jobs:
   readthedocs:
     name: Trigger Read the Docs
     needs: build
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Request a build
+      - name: Request a build of "latest"
         env:
           TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
-          # Version slugs on Read the Docs: "latest" follows master,
-          # "dev" the dev branch, tags their own name.
-          SLUG: >-
-            ${{ github.ref == 'refs/heads/master' && 'latest' ||
-                github.ref_type == 'tag' && github.ref_name ||
-                github.ref_name }}
         run: |
           if [ -z "$TOKEN" ]; then
             echo "READTHEDOCS_TOKEN not set: Read the Docs builds" \
               "from its webhook."
             exit 0
           fi
-          slug=$(echo "$SLUG" | tr '[:upper:]' '[:lower:]')
           code=$(curl -s -o response.json -w '%{http_code}' -X POST \
             -H "Authorization: Token $TOKEN" \
-            "https://readthedocs.org/api/v3/projects/xtft/versions/$slug/builds/")
+            "https://readthedocs.org/api/v3/projects/xtft/versions/latest/builds/")
           cat response.json; echo
           if [ "$code" -ge 300 ]; then
-            echo "::warning::Read the Docs answered HTTP $code" \
-              "for version '$slug' (is it activated?)."
+            echo "::warning::Read the Docs answered HTTP $code."
           fi

@@ -1,12 +1,14 @@
 name: Release
 
-# Build, test and publish the package.
+# Runs when a version tag is pushed, and only then:
 #
-#   tag vX.Y.Z (final version)       -> PyPI + GitHub release
-#   tag vX.Y.ZrcN / aN / bN / .devN  -> TestPyPI + GitHub pre-release
-#   manual run ("Run workflow")      -> TestPyPI or PyPI, as chosen
+#   git tag v0.1.0 && git push origin v0.1.0
 #
-# The tag must match the version in pyproject.toml.
+# The tag must match the version in pyproject.toml. The package is
+# built, tested as an installed wheel and uploaded to TestPyPI;
+# a final version (v1.2.0) then goes to PyPI, a pre-release
+# (v1.2.0rc1, a1, b1, .dev1) stays on TestPyPI. A GitHub release
+# with the files follows.
 #
 # Repository secrets (Settings > Secrets and variables > Actions):
 #   PYPI_API_TOKEN       API token of pypi.org (scope: project xtft,
@@ -16,13 +18,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      target:
-        description: "Where to publish the current commit"
-        type: choice
-        options: [testpypi, pypi]
-        default: testpypi
 
 permissions:
   contents: read
@@ -56,13 +51,11 @@ jobs:
           pre=$(python -c "from packaging.version import Version as V; v=V('$version'); print(str(v.is_prerelease or v.is_devrelease).lower())")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            tag="${GITHUB_REF_NAME#v}"
-            same=$(python -c "from packaging.version import Version as V; print(V('$tag') == V('$version'))")
-            if [ "$same" != "True" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"
-              exit 1
-            fi
+          tag="${GITHUB_REF_NAME#v}"
+          same=$(python -c "from packaging.version import Version as V; print(V('$tag') == V('$version'))")
+          if [ "$same" != "True" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"
+            exit 1
           fi
           echo "Version $version (pre-release: $pre)"
 
@@ -94,11 +87,6 @@ jobs:
   testpypi:
     name: Publish to TestPyPI
     needs: build
-    if: >
-      (github.event_name == 'workflow_dispatch' &&
-       inputs.target == 'testpypi') ||
-      (github.ref_type == 'tag' &&
-       needs.build.outputs.prerelease == 'true')
     runs-on: ubuntu-latest
     environment:
       name: testpypi
@@ -127,12 +115,10 @@ jobs:
 
   pypi:
     name: Publish to PyPI
-    needs: build
-    if: >
-      (github.event_name == 'workflow_dispatch' &&
-       inputs.target == 'pypi') ||
-      (github.ref_type == 'tag' &&
-       needs.build.outputs.prerelease == 'false')
+    # Only after the upload to TestPyPI succeeded, and only for
+    # final versions.
+    needs: [build, testpypi]
+    if: needs.build.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -158,13 +144,12 @@ jobs:
 
   github-release:
     name: GitHub release
-    needs: [build, pypi, testpypi]
-    # Runs after whichever publish job applied to this tag.
+    needs: [build, testpypi, pypi]
+    # After TestPyPI, and after PyPI for a final version.
     if: >
-      always() && github.ref_type == 'tag' &&
-      needs.build.result == 'success' &&
+      always() && needs.testpypi.result == 'success' &&
       (needs.pypi.result == 'success' ||
-       needs.testpypi.result == 'success')
+       needs.build.outputs.prerelease == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: write

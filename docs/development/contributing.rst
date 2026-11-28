@@ -49,7 +49,8 @@ minutes on a CPU. To build without running the examples:
 
    XTFT_DOCS_NO_EXAMPLES=1 sphinx-build -b html docs docs/_build/html
 
-Read the Docs builds every push from ``.readthedocs.yaml``.
+Read the Docs builds the site from ``.readthedocs.yaml``; the
+``docs.yml`` workflow checks it on every push to ``master``.
 
 Continuous integration
 ----------------------
@@ -68,14 +69,14 @@ Continuous integration
    * - ``lint.yml``
      - ``ruff check`` and ``ruff format --check``
    * - ``docs.yml``
-     - Sphinx build with warnings as errors (gallery executed on
-       ``master`` and tags); optionally triggers Read the Docs
+     - on every push to ``master``: Sphinx build with warnings as
+       errors, gallery executed; optionally triggers Read the Docs
    * - ``release.yml``
-     - on a ``vX.Y.Z`` tag: build, check the tag against
-       ``pyproject.toml``, run the tests against the wheel, publish
-       (final versions to PyPI with ``PYPI_API_TOKEN``,
-       pre-releases to TestPyPI with ``TEST_PYPI_API_TOKEN``) and
-       create the GitHub release; a manual run publishes to either
+     - only when a ``v*`` tag is pushed: build, check the tag
+       against ``pyproject.toml``, run the tests against the wheel,
+       upload to TestPyPI (``TEST_PYPI_API_TOKEN``), then to PyPI
+       for a final version (``PYPI_API_TOKEN``), and create the
+       GitHub release
 
 Releasing
 ---------
