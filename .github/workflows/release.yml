@@ -69,7 +69,7 @@ jobs:
         run: |
           python -m venv /tmp/wheel-env
           /tmp/wheel-env/bin/pip install "torch>=2.1" \
-            --index-url https://download.pytorch.org/whl/cpu
+            --no-deps --index-url https://download.pytorch.org/whl/cpu
           /tmp/wheel-env/bin/pip install "$(ls dist/*.whl)[torch,test]"
           # Run from a copy of the tests so that the installed wheel,
           # not the checkout, is imported.

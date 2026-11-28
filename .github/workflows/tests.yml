@@ -48,7 +48,7 @@ jobs:
             pip install "torch>=2.1"
           else
             pip install "torch>=2.1" \
-              --index-url https://download.pytorch.org/whl/cpu
+              --no-deps --index-url https://download.pytorch.org/whl/cpu
           fi
 
       - name: Install xtft
@@ -108,7 +108,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "torch>=2.1" \
-            --index-url https://download.pytorch.org/whl/cpu
+            --no-deps --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[torch,tf,test]"
 
       - name: Run backend tests
@@ -133,7 +133,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "torch>=2.1" \
-            --index-url https://download.pytorch.org/whl/cpu
+            --no-deps --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[torch]"
 
       - name: Run every example
