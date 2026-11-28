@@ -28,7 +28,7 @@ Optional extras
      - the XTFT model, training and inference
    * - ``tf``
      - TensorFlow 2.20 and Keras 3
-     - the Keras XTFT and TFT ported from fusionlab-learn
+     - the Keras XTFT and TFT
    * - ``bench``
      - neuralforecast, statsforecast, datasetsforecast, LightGBM,
        xgboost

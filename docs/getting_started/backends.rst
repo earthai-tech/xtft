@@ -17,7 +17,7 @@ when they are first accessed:
        trainer of :mod:`xtft.nn.torch.trainer`.
    * - ``"tensorflow"``
      - ``xtft.nn.tf``
-     - Keras XTFT and TFT ported from fusionlab-learn; needs the
+     - Keras XTFT and TFT; needs the
        ``tf`` extra.
 
 Choose the backend before importing a model, in code or with the

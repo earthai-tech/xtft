@@ -68,7 +68,7 @@ install from the repository (below).
 | Extra | Installs | For |
 |---|---|---|
 | `torch` | PyTorch ≥ 2.1 | the XTFT model, training and inference |
-| `tf` | TensorFlow 2.20 / Keras 3 | the Keras XTFT and TFT ported from fusionlab-learn |
+| `tf` | TensorFlow 2.20 / Keras 3 | the Keras XTFT and TFT |
 | `bench` | neuralforecast, statsforecast, LightGBM, … | the benchmark scripts |
 | `test`, `docs` | pytest, Sphinx and extensions | tests and documentation |
 
@@ -200,7 +200,7 @@ cfg = TrainConfig(
 import xtft
 
 xtft.set_backend("tensorflow")     # or XTFT_BACKEND=tensorflow
-from xtft.nn import XTFT, TFT      # Keras classes, from fusionlab-learn
+from xtft.nn import XTFT, TFT      # Keras classes
 ```
 
 The PyTorch path never imports TensorFlow, and `xtft.evaluation` and
@@ -244,7 +244,4 @@ please cite this repository.
 
 ## ⚖️ Licence
 
-BSD-3-Clause, see [LICENSE](LICENSE). The Keras models and their
-support code come from
-[fusionlab-learn](https://github.com/earthai-tech/fusionlab-learn);
-see [PORTING.md](PORTING.md).
+BSD-3-Clause, see [LICENSE](LICENSE).

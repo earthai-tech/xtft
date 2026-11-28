@@ -21,17 +21,15 @@ Package layout
    * - ``xtft.nn``
      - models resolved for the active backend
    * - ``xtft.nn.tf``
-     - Keras XTFT and TFT ported from fusionlab-learn
+     - Keras implementation of XTFT and TFT
    * - ``xtft.compat``, ``xtft.core``, ``xtft.utils``,
        ``xtft.api``, ``xtft.metrics``
-     - support code of the Keras models, ported from
-       fusionlab-learn
+     - support code of the Keras models
 
 The modules in the first four rows are the maintained public API
-and are documented in the :doc:`/api/index`. The ported Keras code
-is kept for users of fusionlab-learn; ``PORTING.md`` in the
-repository records its provenance. It is tested by the Keras
-backend tests and excluded from the coverage figure.
+and are documented in the :doc:`/api/index`. The Keras code is
+tested by the Keras backend tests and excluded from the coverage
+figure.
 
 Design rules
 ------------

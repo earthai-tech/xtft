@@ -43,3 +43,6 @@ paper/**/*.synctex.gz
 coverage.xml
 .coverage
 htmlcov/
+
+# Internal provenance notes of the Keras code (kept locally).
+/PORTING.md

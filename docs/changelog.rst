@@ -17,7 +17,7 @@ First public version.
 * Model-agnostic calibration: split-conformal quantile regression,
   adaptive conformal inference and whole-path bands.
 * Metrics, Diebold-Mariano and Friedman/Nemenyi tests.
-* Keras XTFT and TFT ported from fusionlab-learn, behind the
+* Keras XTFT and TFT, behind the
   ``tensorflow`` backend.
 * Benchmark scripts for electricity prices, retail sales,
   long-horizon series and CAMELS-US streamflow.
