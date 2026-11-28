@@ -209,8 +209,7 @@ def fit(
     --------
     >>> import numpy as np, pandas as pd, torch
     >>> from xtft.data import PanelData, PanelSpec, WindowDataset
-    >>> from xtft.nn.torch.models import XTFT
-    >>> from xtft.nn.torch.trainer import TrainConfig, fit
+    >>> from xtft.nn import XTFT, TrainConfig, fit
     >>> df = pd.DataFrame({"unique_id": "a", "ds": np.arange(200),
     ...                    "y": np.sin(np.arange(200) / 3)})
     >>> panel = PanelData.from_frame(df, PanelSpec())

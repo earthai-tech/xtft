@@ -74,7 +74,7 @@ def pinball_loss(
     Examples
     --------
     >>> import torch
-    >>> from xtft.nn.torch.probabilistic import pinball_loss
+    >>> from xtft.nn import pinball_loss
     >>> y = torch.tensor([1.0, float("nan")])
     >>> q = torch.tensor([[0.0, 1.0, 2.0], [5.0, 5.0, 5.0]])
     >>> round(float(pinball_loss(y, q, [0.1, 0.5, 0.9])), 4)
@@ -124,7 +124,7 @@ class QuantileLoss(nn.Module):
     Examples
     --------
     >>> import torch
-    >>> from xtft.nn.torch.probabilistic import QuantileLoss
+    >>> from xtft.nn import QuantileLoss
     >>> loss = QuantileLoss([0.5])
     >>> float(loss(torch.zeros(3), torch.ones(3, 1)))
     0.5

@@ -2,14 +2,20 @@
 
 xtft ships one model family with two implementations: a PyTorch
 implementation (the default and the one used for benchmarking) and
-a TensorFlow/Keras implementation inherited from fusionlab-learn.
+a TensorFlow/Keras implementation.
 This module decides which implementation :mod:`xtft.nn` resolves.
 
 The framework is chosen, in decreasing priority, by
 
 1. an explicit call to :func:`set_backend`,
 2. the ``XTFT_BACKEND`` environment variable,
-3. the default, ``"torch"``.
+3. the installed frameworks: ``"torch"`` if PyTorch is installed,
+   otherwise ``"tensorflow"`` if TensorFlow is, otherwise
+   ``"torch"`` (the default; importing a model then reports the
+   missing package).
+
+The frameworks are located with :func:`importlib.util.find_spec`,
+without being imported.
 
 The choice should be made before the first model is imported from
 :mod:`xtft.nn`; classes already imported keep the implementation
@@ -135,6 +141,11 @@ def available_backends() -> tuple[str, ...]:
 def get_backend() -> str:
     """Return the active deep-learning backend.
 
+    The explicit choice of :func:`set_backend` comes first, then
+    the ``XTFT_BACKEND`` environment variable. Without either, the
+    backend follows the installed frameworks: PyTorch when it is
+    installed, else TensorFlow when it is, else ``"torch"``.
+
     Returns
     -------
     str
@@ -148,6 +159,7 @@ def get_backend() -> str:
     See Also
     --------
     set_backend : Choose the backend explicitly.
+    available_backends : The backends whose framework is installed.
 
     Examples
     --------
@@ -159,7 +171,14 @@ def get_backend() -> str:
     if _state["backend"] is not None:
         return _state["backend"]
     env = os.environ.get(ENV_VAR)
-    return _normalize(env) if env else DEFAULT_BACKEND
+    if env:
+        return _normalize(env)
+    if not is_available(DEFAULT_BACKEND):
+        # A TensorFlow-only installation works out of the box.
+        for name in SUPPORTED_BACKENDS:
+            if is_available(name):
+                return name
+    return DEFAULT_BACKEND
 
 
 def set_backend(name: str, *, strict: bool = True) -> str:

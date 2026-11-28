@@ -89,7 +89,7 @@ pytest
 ## ⚡ Quick start
 
 ```python
-from xtft.nn.torch.models import XTFT
+from xtft.nn import XTFT
 
 model = XTFT(
     static_input_dim=4,
@@ -111,7 +111,7 @@ for missing values, `x_future` `(B, T + H, F)`.
 ```python
 import numpy as np
 from xtft.data import PanelData, PanelSpec, WindowDataset
-from xtft.nn.torch.trainer import TrainConfig, fit, predict
+from xtft.nn import TrainConfig, fit, predict
 
 # Long format: one row per series and time step.
 spec = PanelSpec(static=("area",), past=("temp",), known=("dow_sin", "dow_cos"))
@@ -195,6 +195,10 @@ cfg = TrainConfig(
 
 <details>
 <summary><b>Keras backend</b></summary>
+
+`from xtft.nn import XTFT` follows the active backend: PyTorch by
+default, Keras when TensorFlow is chosen, or when it is the only
+framework installed.
 
 ```python
 import xtft

@@ -121,7 +121,7 @@ Show me the code
 
       .. code-block:: python
 
-         from xtft.nn.torch.models import XTFT
+         from xtft.nn import XTFT
 
          model = XTFT(
              static_input_dim=4,
@@ -137,7 +137,7 @@ Show me the code
 
       .. code-block:: python
 
-         from xtft.nn.torch.trainer import TrainConfig, fit, predict
+         from xtft.nn import TrainConfig, fit, predict
 
          history = fit(
              model, train_ds, val_ds, quantiles,

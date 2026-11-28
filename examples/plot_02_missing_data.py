@@ -21,8 +21,7 @@ import torch
 
 from xtft.data import PanelData, PanelSpec, WindowDataset
 from xtft.evaluation import evaluate_quantile_forecast
-from xtft.nn.torch.models import XTFT
-from xtft.nn.torch.trainer import TrainConfig, fit, predict
+from xtft.nn import XTFT, TrainConfig, fit, predict
 
 rng = np.random.default_rng(2)
 n_series, n_steps = 6, 600

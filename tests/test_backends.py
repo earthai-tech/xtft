@@ -23,7 +23,44 @@ def _reset_backend(monkeypatch):
 
 
 def test_default_is_torch():
+    # PyTorch is installed in the test environment.
     assert get_backend() == "torch"
+
+
+def _installed(monkeypatch, *names):
+    """Pretend that only the frameworks of `names` are installed."""
+    monkeypatch.setattr(fw, "is_available", lambda n: n in names)
+
+
+def test_default_falls_back_to_tensorflow(monkeypatch):
+    _installed(monkeypatch, "tensorflow")
+    assert get_backend() == "tensorflow"
+
+
+def test_default_prefers_torch_when_both(monkeypatch):
+    _installed(monkeypatch, "torch", "tensorflow")
+    assert get_backend() == "torch"
+
+
+def test_default_without_framework_is_torch(monkeypatch):
+    _installed(monkeypatch)
+    assert get_backend() == "torch"
+
+
+def test_env_var_beats_installed_frameworks(monkeypatch):
+    _installed(monkeypatch, "torch", "tensorflow")
+    monkeypatch.setenv(fw.ENV_VAR, "tensorflow")
+    assert get_backend() == "tensorflow"
+
+
+def test_xtft_follows_the_backend(monkeypatch):
+    import xtft.nn
+
+    monkeypatch.setitem(fw._state, "backend", "torch")
+    assert xtft.nn.XTFT.__module__ == "xtft.nn.torch.models.xtft"
+    if is_available("tensorflow"):
+        monkeypatch.setitem(fw._state, "backend", "tensorflow")
+        assert xtft.nn.XTFT.__module__.startswith("xtft.nn.tf.")
 
 
 @pytest.mark.parametrize(

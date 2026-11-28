@@ -1,8 +1,11 @@
 Backends
 ========
 
-The models of :mod:`xtft.nn` are resolved for the active backend
-when they are first accessed:
+One import serves both implementations: ``from xtft.nn import
+XTFT`` returns the PyTorch class under the ``"torch"`` backend
+(``xtft.nn.torch.models.XTFT``) and the Keras class under the
+``"tensorflow"`` backend. The class is looked up when it is
+imported, from the active backend:
 
 .. list-table::
    :header-rows: 1
@@ -20,8 +23,19 @@ when they are first accessed:
      - Keras XTFT and TFT; needs the
        ``tf`` extra.
 
-Choose the backend before importing a model, in code or with the
-``XTFT_BACKEND`` environment variable:
+The active backend is, in this order:
+
+1. the one chosen with :func:`xtft.set_backend` (or temporarily
+   with :func:`xtft.use_backend`);
+2. the one named by the ``XTFT_BACKEND`` environment variable
+   (``torch``, ``pytorch``, ``tensorflow``, ``tf`` or ``keras``);
+3. otherwise the installed framework: PyTorch if it is installed,
+   TensorFlow if only TensorFlow is.
+
+So ``pip install "xtft[torch]"`` gives the PyTorch model and
+``pip install "xtft[tf]"`` the Keras one, with no configuration.
+With both installed, PyTorch is the default. Choose before
+importing a model:
 
 .. code-block:: python
 

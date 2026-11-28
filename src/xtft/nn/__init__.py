@@ -1,24 +1,38 @@
-"""Forecasting models, resolved for the active backend.
+"""Forecasting models and their training loop, at two levels.
 
-Model classes are looked up lazily, on attribute access, from the
-implementation that matches :func:`xtft.backends.get_backend`:
+Everything public in the neural-network part of xtft is importable
+from here::
+
+    from xtft.nn import XTFT, TrainConfig, fit, predict
+
+Names are resolved lazily, on first access, so ``import xtft.nn``
+loads no deep-learning framework and the subpackages never import
+each other at module level (no circular imports).
+
+Models are looked up from the implementation that matches
+:func:`xtft.backends.get_backend`:
 
 * ``"torch"`` (default): :mod:`xtft.nn.torch`, the reference
   implementation used in the benchmarks;
-* ``"tensorflow"``: :mod:`xtft.nn.tf`, the Keras implementation
-  ported from fusionlab-learn.
+* ``"tensorflow"``: the Keras implementation in ``xtft.nn.tf``.
 
 ``TFT`` is provided by the TensorFlow backend only. Benchmarks use
 an independent PyTorch TFT (neuralforecast) as the baseline, so the
 comparison does not rest on our own re-implementation of the
-competitor. The Keras ``SuperXTFT`` is no longer part of the
-public API; it stays importable from :mod:`xtft.nn.tf.hybrid`.
+competitor. The Keras ``SuperXTFT`` is not part of the public API;
+it stays importable from ``xtft.nn.tf.hybrid``.
+
+The training loop and the probabilistic building blocks
+(``TrainConfig``, ``fit``, ``predict``, ``QuantileLoss``,
+``pinball_loss``, ``NonCrossingQuantileHead``) belong to the
+PyTorch implementation and resolve to it whatever the backend.
 
 Examples
 --------
 >>> import xtft.nn
->>> sorted(xtft.nn.__all__)
-['TFT', 'XTFT']
+>>> sorted(xtft.nn.__all__)  # doctest: +NORMALIZE_WHITESPACE
+['NonCrossingQuantileHead', 'QuantileLoss', 'TFT', 'TrainConfig',
+ 'XTFT', 'fit', 'pinball_loss', 'predict']
 """
 
 from __future__ import annotations
@@ -27,7 +41,24 @@ import importlib
 
 from ..backends import get_backend
 
-__all__ = ["TFT", "XTFT"]
+# Models whose implementation depends on the backend.
+_MODELS = ("TFT", "XTFT")
+
+# PyTorch training utilities, the same for every backend:
+# name -> (module, attribute).
+_TORCH = {
+    "TrainConfig": ("xtft.nn.torch.trainer", "TrainConfig"),
+    "fit": ("xtft.nn.torch.trainer", "fit"),
+    "predict": ("xtft.nn.torch.trainer", "predict"),
+    "QuantileLoss": ("xtft.nn.torch.probabilistic", "QuantileLoss"),
+    "pinball_loss": ("xtft.nn.torch.probabilistic", "pinball_loss"),
+    "NonCrossingQuantileHead": (
+        "xtft.nn.torch.probabilistic",
+        "NonCrossingQuantileHead",
+    ),
+}
+
+__all__ = sorted([*_MODELS, *_TORCH])
 
 # (module, attribute) of each public model per backend; None marks
 # a model that the backend deliberately does not provide.
@@ -51,11 +82,7 @@ _UNAVAILABLE = {
 }
 
 
-def __getattr__(name: str):
-    if name not in __all__:
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r}"
-        )
+def _resolve_model(name: str):
     backend = get_backend()
     entry = _REGISTRY[backend][name]
     if entry is None:
@@ -77,6 +104,20 @@ def __getattr__(name: str):
             "backend."
         ) from exc
     return getattr(module, attr)
+
+
+def __getattr__(name: str):
+    if name in _MODELS:
+        # Not cached: the backend may change between two accesses.
+        return _resolve_model(name)
+    if name in _TORCH:
+        module_name, attr = _TORCH[name]
+        value = getattr(importlib.import_module(module_name), attr)
+        globals()[name] = value  # cache: independent of the backend
+        return value
+    raise AttributeError(
+        f"module {__name__!r} has no attribute {name!r}"
+    )
 
 
 def __dir__():

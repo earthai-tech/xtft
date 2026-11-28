@@ -84,8 +84,7 @@ targets plus the number of ``past`` columns.
 .. code-block:: python
 
    import torch
-   from xtft.nn.torch.models import XTFT
-   from xtft.nn.torch.trainer import TrainConfig, fit
+   from xtft.nn import XTFT, TrainConfig, fit
 
    quantiles = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95]
    torch.manual_seed(0)
@@ -111,7 +110,7 @@ best weights.
 
 .. code-block:: python
 
-   from xtft.nn.torch.trainer import predict
+   from xtft.nn import predict
 
    q = predict(model, test_ds)                  # (N, H, 1, K), scaled
    q = panel.inverse_target(q, test_idx[:, 0])[:, :, 0]

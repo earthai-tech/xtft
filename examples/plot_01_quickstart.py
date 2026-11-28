@@ -27,8 +27,7 @@ from xtft.data import (
     add_calendar_features,
 )
 from xtft.evaluation import evaluate_quantile_forecast
-from xtft.nn.torch.models import XTFT
-from xtft.nn.torch.trainer import TrainConfig, fit, predict
+from xtft.nn import XTFT, TrainConfig, fit, predict
 
 rng = np.random.default_rng(0)
 n_series, n_days = 8, 500

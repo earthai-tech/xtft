@@ -31,7 +31,7 @@ Settings
 
 .. code-block:: python
 
-   from xtft.nn.torch.trainer import TrainConfig, fit, predict
+   from xtft.nn import TrainConfig, fit, predict
 
    cfg = TrainConfig(
        max_epochs=100,

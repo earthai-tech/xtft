@@ -276,7 +276,7 @@ class XTFT(nn.Module):
     Examples
     --------
     >>> import torch
-    >>> from xtft.nn.torch.models import XTFT
+    >>> from xtft.nn import XTFT
     >>> _ = torch.manual_seed(0)
     >>> model = XTFT(static_input_dim=3, dynamic_input_dim=4,
     ...              future_input_dim=2, forecast_horizon=5,

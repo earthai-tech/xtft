@@ -120,7 +120,7 @@ Inputs and outputs
 
 .. code-block:: python
 
-   from xtft.nn.torch.models import XTFT
+   from xtft.nn import XTFT
 
    model = XTFT(
        static_input_dim=S,        # 0 disables the static path
