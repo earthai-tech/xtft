@@ -1,5 +1,14 @@
 name: Docs
 
+# Read the Docs builds and hosts the site from .readthedocs.yaml.
+# This workflow checks every change: the pages must build with
+# warnings as errors. On master the example gallery is executed as
+# on Read the Docs; elsewhere it is skipped to save time. After a
+# push, an optional job asks Read the Docs to rebuild, for projects
+# whose webhook is not set up (private repositories): add the
+# secret READTHEDOCS_TOKEN (readthedocs.org > Account settings >
+# API tokens) to enable it.
+
 on:
   push:
     branches: [master, dev]
@@ -14,13 +23,11 @@ concurrency:
 permissions:
   contents: read
 
-# The site is published by Read the Docs (.readthedocs.yaml); this
-# workflow only checks that the pages build.
-
 jobs:
   build:
+    name: Build the documentation
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +44,50 @@ jobs:
             --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[torch,docs]"
 
-      # The gallery runs on Read the Docs; here the pages are
-      # checked without executing the examples.
       - name: Build HTML (warnings are errors)
         env:
-          XTFT_DOCS_NO_EXAMPLES: "1"
+          # Run the gallery on master and tags, as Read the Docs does.
+          XTFT_DOCS_NO_EXAMPLES: >-
+            ${{ (github.ref == 'refs/heads/master' ||
+                 startsWith(github.ref, 'refs/tags/v')) && '' || '1' }}
+          MPLBACKEND: Agg
         run: sphinx-build -b html -W --keep-going docs docs/_build/html
+
+      - name: Upload the site
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html
+          retention-days: 7
+
+  readthedocs:
+    name: Trigger Read the Docs
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request a build
+        env:
+          TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
+          # Version slugs on Read the Docs: "latest" follows master,
+          # "dev" the dev branch, tags their own name.
+          SLUG: >-
+            ${{ github.ref == 'refs/heads/master' && 'latest' ||
+                github.ref_type == 'tag' && github.ref_name ||
+                github.ref_name }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "READTHEDOCS_TOKEN not set: Read the Docs builds" \
+              "from its webhook."
+            exit 0
+          fi
+          slug=$(echo "$SLUG" | tr '[:upper:]' '[:lower:]')
+          code=$(curl -s -o response.json -w '%{http_code}' -X POST \
+            -H "Authorization: Token $TOKEN" \
+            "https://readthedocs.org/api/v3/projects/xtft/versions/$slug/builds/")
+          cat response.json; echo
+          if [ "$code" -ge 300 ]; then
+            echo "::warning::Read the Docs answered HTTP $code" \
+              "for version '$slug' (is it activated?)."
+          fi

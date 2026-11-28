@@ -1,0 +1,32 @@
+# Codecov settings. The upload token is the repository secret
+# CODECOV_TOKEN (see .github/workflows/tests.yml).
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 1
+  round: down
+  range: "75...95"
+  status:
+    project:
+      default:
+        # Fail the status if total coverage drops by more than 1%.
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        # New or changed lines should be tested.
+        target: 80%
+        informational: true
+
+# The ported Keras code is excluded in pyproject.toml
+# ([tool.coverage.run] omit); these paths are never uploaded.
+ignore:
+  - "benchmarks"
+  - "examples"
+  - "tools"
+  - "docs"
+
+comment:
+  layout: "diff, flags, files"
+  require_changes: true

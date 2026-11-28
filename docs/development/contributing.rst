@@ -63,17 +63,19 @@ Continuous integration
    * - ``tests.yml``
      - pytest with coverage on Python 3.10-3.12 (Linux) and 3.12
        (Windows, macOS), CPU PyTorch; Keras backend tests on
-       ``master``, weekly and on demand; coverage to Codecov
+       ``master``, weekly and on demand; coverage to Codecov; every
+       gallery example run as a script
    * - ``lint.yml``
      - ``ruff check`` and ``ruff format --check``
    * - ``docs.yml``
-     - Sphinx build with warnings as errors, without running the
-       examples
+     - Sphinx build with warnings as errors (gallery executed on
+       ``master`` and tags); optionally triggers Read the Docs
    * - ``release.yml``
      - on a ``vX.Y.Z`` tag: build, check the tag against
-       ``pyproject.toml``, test the wheel, publish (final versions
-       to PyPI, pre-releases to TestPyPI) and create the GitHub
-       release
+       ``pyproject.toml``, run the tests against the wheel, publish
+       (final versions to PyPI with ``PYPI_API_TOKEN``,
+       pre-releases to TestPyPI with ``TEST_PYPI_API_TOKEN``) and
+       create the GitHub release; a manual run publishes to either
 
 Releasing
 ---------

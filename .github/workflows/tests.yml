@@ -83,6 +83,8 @@ jobs:
         with:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: torch
+          name: py${{ matrix.python }}-${{ matrix.os }}
           fail_ci_if_error: false
 
   tensorflow:
@@ -111,3 +113,36 @@ jobs:
 
       - name: Run backend tests
         run: pytest tests/test_backends.py tests/test_tf_models_smoke.py
+
+  examples:
+    # The gallery scripts are run by Read the Docs; running them here
+    # catches a broken example before it reaches the site.
+    name: Gallery examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install xtft
+        run: |
+          python -m pip install --upgrade pip
+          pip install "torch>=2.1" \
+            --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[torch]"
+
+      - name: Run every example
+        env:
+          MPLBACKEND: Agg
+        shell: bash
+        run: |
+          for f in examples/plot_*.py; do
+            echo "::group::$f"
+            python "$f"
+            echo "::endgroup::"
+          done

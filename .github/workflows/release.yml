@@ -1,29 +1,37 @@
 name: Release
 
-# Push a tag "vX.Y.Z" whose version matches pyproject.toml:
-#   final versions (1.2.0)            -> PyPI + GitHub release
-#   pre-releases (1.2.0rc1, a1, b1,
-#   1.2.0.dev1)                       -> TestPyPI + GitHub pre-release
-# Manual runs publish the current commit to TestPyPI.
+# Build, test and publish the package.
 #
-# Publishing uses PyPI trusted publishing (OIDC, no API token):
-# add this repository as a trusted publisher on pypi.org and
-# test.pypi.org (workflow "release.yml", environments "pypi" and
-# "testpypi").
+#   tag vX.Y.Z (final version)       -> PyPI + GitHub release
+#   tag vX.Y.ZrcN / aN / bN / .devN  -> TestPyPI + GitHub pre-release
+#   manual run ("Run workflow")      -> TestPyPI or PyPI, as chosen
+#
+# The tag must match the version in pyproject.toml.
+#
+# Repository secrets (Settings > Secrets and variables > Actions):
+#   PYPI_API_TOKEN       API token of pypi.org (scope: project xtft,
+#                        or the whole account for the first upload)
+#   TEST_PYPI_API_TOKEN  API token of test.pypi.org
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish the current commit"
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build distributions
+    name: Build and check distributions
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
@@ -64,11 +72,19 @@ jobs:
           python -m build
           twine check --strict dist/*
 
-      - name: Smoke-test the wheel
+      - name: Install the wheel and run the tests against it
         run: |
           python -m venv /tmp/wheel-env
-          /tmp/wheel-env/bin/pip install dist/*.whl
-          cd /tmp && /tmp/wheel-env/bin/python -c "import xtft, xtft.evaluation, xtft.data; print(xtft.__version__)"
+          /tmp/wheel-env/bin/pip install "torch>=2.1" \
+            --index-url https://download.pytorch.org/whl/cpu
+          /tmp/wheel-env/bin/pip install "$(ls dist/*.whl)[torch,test]"
+          # Run from a copy of the tests so that the installed wheel,
+          # not the checkout, is imported.
+          cp -r tests /tmp/wheel-tests
+          cd /tmp && /tmp/wheel-env/bin/python -m pytest -q \
+            -p no:cacheprovider wheel-tests
+          /tmp/wheel-env/bin/python -c \
+            "import xtft; print('xtft', xtft.__version__)"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,15 +95,23 @@ jobs:
     name: Publish to TestPyPI
     needs: build
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      needs.build.outputs.prerelease == 'true'
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.target == 'testpypi') ||
+      (github.ref_type == 'tag' &&
+       needs.build.outputs.prerelease == 'true')
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/xtft
-    permissions:
-      id-token: write
+      url: https://test.pypi.org/project/xtft/
     steps:
+      - name: Check the token
+        env:
+          TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Secret TEST_PYPI_API_TOKEN is not set."
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           name: dist
@@ -95,26 +119,42 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          user: __token__
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          # A version can be uploaded once; re-runs skip it.
           skip-existing: true
+          attestations: false
 
   pypi:
     name: Publish to PyPI
     needs: build
     if: >
-      github.ref_type == 'tag' &&
-      needs.build.outputs.prerelease == 'false'
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.target == 'pypi') ||
+      (github.ref_type == 'tag' &&
+       needs.build.outputs.prerelease == 'false')
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/xtft
-    permissions:
-      id-token: write
+      url: https://pypi.org/project/xtft/
     steps:
+      - name: Check the token
+        env:
+          TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Secret PYPI_API_TOKEN is not set."
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   github-release:
     name: GitHub release
