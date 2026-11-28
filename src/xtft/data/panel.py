@@ -90,9 +90,9 @@ class PanelSpec:
 
 _CALENDAR = {
     "hour": (lambda t: t.hour, 24),
-    "dayofweek": (lambda t: t.dayofweek, 7),
+    "dayofweek": (lambda t: t.day_of_week, 7),
     "dayofmonth": (lambda t: t.day - 1, 31),
-    "dayofyear": (lambda t: t.dayofyear - 1, 366),
+    "dayofyear": (lambda t: t.day_of_year - 1, 366),
     "month": (lambda t: t.month - 1, 12),
     "minute": (lambda t: t.minute, 60),
 }

@@ -14,9 +14,10 @@ Work on the `dev` branch; `master` receives tested releases.
 
 ```bash
 ruff check .
-ruff format --check src tests tools benchmarks
+ruff format --check src tests tools benchmarks examples
 pytest --cov=xtft
-sphinx-build -b html -W docs docs/_build/html
+sphinx-build -b html -W docs docs/_build/html   # runs the examples
+XTFT_DOCS_NO_EXAMPLES=1 sphinx-build -b html -W docs docs/_build/html
 ```
 
 Code follows the numpydoc convention, with lines of at most 71
@@ -28,7 +29,7 @@ characters. New behaviour comes with tests.
 |---|---|
 | `tests.yml` | pytest with coverage on Python 3.10-3.12 (Linux) and 3.12 (Windows, macOS), CPU PyTorch; Keras backend tests on `master`, weekly and on demand; coverage to Codecov |
 | `lint.yml` | `ruff check` and `ruff format --check` |
-| `docs.yml` | Sphinx build with warnings as errors; deployed to GitHub Pages from `master` and version tags |
+| `docs.yml` | Sphinx build with warnings as errors (examples not executed); the site itself is built and hosted by Read the Docs from `.readthedocs.yaml` |
 | `release.yml` | on a `vX.Y.Z` tag: build, check the tag against `pyproject.toml`, test the wheel, publish (final versions to PyPI, pre-releases to TestPyPI), create the GitHub release |
 
 ## Releasing

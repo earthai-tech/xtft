@@ -37,7 +37,9 @@ paper/**/*.synctex.gz
 /paper/*.pdf
 /paper/*.zip
 /docs/_build/
-/docs/generated/
+/docs/api/generated/
+/docs/auto_examples/
+/docs/sg_execution_times.rst
 coverage.xml
 .coverage
 htmlcov/

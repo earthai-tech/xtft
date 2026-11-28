@@ -142,7 +142,14 @@ def seasonal_scale(y_train: ArrayLike, season: int = 1) -> float:
     Notes
     -----
     This is the denominator of the mean absolute scaled error
-    (MASE) [2]_ and of the mean scaled interval score (MSIS).
+    (MASE) [1]_ and of the mean scaled interval score (MSIS).
+
+    References
+    ----------
+    .. [1] Hyndman, R. J. and Koehler, A. B. (2006). Another look
+       at measures of forecast accuracy. International Journal of
+       Forecasting, 22(4), 679-688.
+       https://doi.org/10.1016/j.ijforecast.2006.03.001
 
     Examples
     --------
@@ -174,11 +181,18 @@ def mase(y_true: ArrayLike, y_pred: ArrayLike, scale: float) -> float:
         Targets and point forecasts.
     scale : float
         Positive scale, usually :func:`seasonal_scale` of the
-        training part of the same series [2]_.
+        training part of the same series [1]_.
 
     Returns
     -------
     float
+
+    References
+    ----------
+    .. [1] Hyndman, R. J. and Koehler, A. B. (2006). Another look
+       at measures of forecast accuracy. International Journal of
+       Forecasting, 22(4), 679-688.
+       https://doi.org/10.1016/j.ijforecast.2006.03.001
 
     Examples
     --------

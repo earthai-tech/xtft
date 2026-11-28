@@ -61,11 +61,14 @@ docs = [
   "sphinx>=7",
   "pydata-sphinx-theme>=0.15",
   "numpydoc>=1.6",
+  "sphinx-design>=0.5",
+  "sphinx-copybutton>=0.5",
+  "sphinx-gallery>=0.15",
 ]
 
 [project.urls]
 Homepage = "https://github.com/earthai-tech/xtft"
-Documentation = "https://earthai-tech.github.io/xtft"
+Documentation = "https://xtft.readthedocs.io"
 Source = "https://github.com/earthai-tech/xtft"
 Issues = "https://github.com/earthai-tech/xtft/issues"
 
@@ -184,3 +187,5 @@ convention = "numpy"
 "tools/*" = ["D103"]
 "tools/make_logo.py" = ["D103", "E501"]  # SVG markup
 "benchmarks/*" = ["D103"]
+# Sphinx-Gallery titles: a title line underlined, no period.
+"examples/*" = ["D205", "D400"]

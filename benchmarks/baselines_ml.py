@@ -266,7 +266,7 @@ class LEARAdapter:
                     g[c].to_numpy(float).reshape(n, 24)
                     for c in self.exog
                 ],
-                "weekday": g["ds"].dt.dayofweek.to_numpy()[::24],
+                "weekday": g["ds"].dt.day_of_week.to_numpy()[::24],
             }
         self.ids = list(ctx.panel.ids)
         self.fits = 0

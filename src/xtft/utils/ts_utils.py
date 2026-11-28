@@ -3026,7 +3026,7 @@ def ts_engineering(
     df['year'] = df.index.year
     df['month'] = df.index.month
     df['day'] = df.index.day
-    df['day_of_week'] = df.index.dayofweek  # 0=Monday,...,6=Sunday
+    df['day_of_week'] = df.index.day_of_week  # 0=Monday,...,6=Sunday
     df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
     df['quarter'] = df.index.quarter
     # For hourly data only if index.freq='H'. If not, default=0.

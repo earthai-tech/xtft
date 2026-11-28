@@ -31,4 +31,4 @@ jobs:
         run: ruff check --output-format=github .
 
       - name: Formatting (ruff format)
-        run: ruff format --check src tests tools benchmarks
+        run: ruff format --check src tests tools benchmarks examples

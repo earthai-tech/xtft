@@ -1,0 +1,402 @@
+/* xtft colours on the pydata theme: the teal of the logo's
+   quantile fan and its navy stroke. */
+html[data-theme="light"] {
+  --pst-color-primary: #0f8a73;
+  --pst-color-secondary: #14203a;
+  --pst-color-link: #0f8a73;
+  --pst-color-link-hover: #14203a;
+  --xtft-accent: #12a58a;
+}
+html[data-theme="dark"] {
+  --pst-color-primary: #3cc9ad;
+  --pst-color-secondary: #a9b8d6;
+  --pst-color-link: #3cc9ad;
+  --pst-color-link-hover: #e6edf7;
+  --xtft-accent: #3cc9ad;
+}
+
+.navbar-brand img {
+  height: 30px;
+}
+
+/* Wide tables scroll instead of widening the page. */
+.bd-article table.table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------- home page */
+/* The home page has no page title (the hero shows the wordmark);
+   its sections are drawn at the size of a section. */
+section#what-it-handles > h1,
+section#show-me-the-code > h1,
+section#from-the-gallery > h1,
+section#where-to-next > h1 {
+  font-size: 1.55rem;
+  margin-top: 2.6rem;
+}
+
+/* The home page uses the full width of the window. */
+.bd-main .bd-content .bd-article-container:has(.xh-hero) {
+  max-width: 76rem;
+}
+.xh-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+  gap: 2.2rem;
+  align-items: center;
+  padding: 2.2rem 2rem 2rem;
+  margin: 0.5rem 0 1.6rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 90% at 100% 0%,
+      color-mix(in srgb, var(--xtft-accent) 16%, transparent),
+      transparent 60%),
+    radial-gradient(90% 80% at 0% 100%,
+      color-mix(in srgb, var(--pst-color-secondary) 12%, transparent),
+      transparent 60%),
+    var(--pst-color-surface);
+  border: 1px solid var(--pst-color-border);
+}
+@media (max-width: 860px) {
+  .xh-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1.4rem 1rem;
+  }
+}
+img.xh-wordmark {
+  width: 220px;
+  max-width: 70%;
+  margin: 0 0 0.6rem -6px;
+}
+.xh-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--xtft-accent);
+  margin: 0 0 0.4rem;
+}
+h1.xh-headline {
+  font-size: clamp(1.7rem, 3.2vw, 2.45rem);
+  line-height: 1.15;
+  font-weight: 800;
+  margin: 0 0 0.9rem;
+}
+h1.xh-headline span {
+  display: block;
+  color: var(--xtft-accent);
+}
+.xh-lede {
+  font-size: 1.04rem;
+  color: var(--pst-color-text-muted);
+  max-width: 34rem;
+}
+.xh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.2rem 0 1rem;
+}
+a.xh-btn {
+  padding: 0.5rem 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--pst-color-border);
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--pst-color-text-base);
+  background: var(--pst-color-background);
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+a.xh-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--xtft-accent);
+  color: var(--pst-color-text-base);
+}
+a.xh-btn.xh-btn-primary {
+  background: var(--xtft-accent);
+  border-color: var(--xtft-accent);
+  color: #fff;
+}
+html[data-theme="dark"] a.xh-btn.xh-btn-primary {
+  color: #0c1424;
+}
+.xh-install {
+  display: inline-flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.88rem;
+  background: #0f1729;
+  color: #dfe7f5;
+}
+.xh-install code {
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: 0;
+}
+.xh-prompt {
+  color: #3cc9ad;
+}
+
+/* Animated forecast: the history draws itself, the fan opens from
+   the origin, then later observations appear. One 11 s cycle. */
+svg.xtft-hero-art {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.xh-grid {
+  stroke: var(--pst-color-border);
+  stroke-width: 1;
+}
+.xh-history {
+  fill: none;
+  stroke: var(--pst-color-text-base);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: xh-draw 11s ease-in-out infinite;
+}
+.xh-fan {
+  transform-box: view-box;
+  transform-origin: 400px 50%;  /* X_ORIGIN of tools/make_hero.py */
+  animation: xh-open 11s ease-out infinite;
+}
+.xh-band {
+  fill: var(--xtft-accent);
+  stroke: none;
+}
+.xh-b90 { fill-opacity: 0.16; }
+.xh-b80 { fill-opacity: 0.22; }
+.xh-b50 { fill-opacity: 0.34; }
+.xh-median {
+  fill: none;
+  stroke: var(--xtft-accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+.xh-origin {
+  stroke: var(--pst-color-text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.xh-label {
+  fill: var(--pst-color-text-muted);
+  font-size: 13px;
+  font-family: var(--pst-font-family-base);
+}
+.xh-small {
+  font-size: 11px;
+}
+.xh-legend {
+  animation: xh-fade 11s ease-out infinite;
+}
+.xh-obs {
+  fill: var(--pst-color-text-base);
+  opacity: 0;
+  animation: xh-dot 11s ease-out infinite;
+}
+.xh-now {
+  fill: var(--xtft-accent);
+  stroke: var(--pst-color-surface);
+  stroke-width: 2;
+  animation: xh-pulse 11s ease-in-out infinite;
+}
+@keyframes xh-draw {
+  0% { stroke-dashoffset: 1; }
+  22%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes xh-open {
+  0%, 20% { transform: scaleX(0); opacity: 0; }
+  32%, 92% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+@keyframes xh-fade {
+  0%, 30% { opacity: 0; }
+  38%, 92% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes xh-dot {
+  0%, 30% { opacity: 0; }
+  34%, 92% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+@keyframes xh-pulse {
+  0%, 18% { r: 0; }
+  22% { r: 7px; }
+  26%, 100% { r: 4.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xh-history,
+  .xh-fan,
+  .xh-legend,
+  .xh-now {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  .xh-obs {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+/* Workflow strip. */
+.xh-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 1rem;
+}
+@media (max-width: 860px) {
+  .xh-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 0.8rem;
+  }
+}
+a.xh-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 1.6rem 0.4rem 0.2rem;
+  text-decoration: none;
+  color: var(--pst-color-text-base);
+}
+a.xh-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 0.6rem;
+  top: 1.05rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-top: 2px solid var(--xtft-accent);
+  border-right: 2px solid var(--xtft-accent);
+  transform: rotate(45deg);
+}
+a.xh-step span:last-child {
+  font-size: 0.86rem;
+  color: var(--pst-color-text-muted);
+}
+a.xh-step:hover strong {
+  color: var(--xtft-accent);
+}
+.xh-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--xtft-accent);
+  border: 2px solid var(--xtft-accent);
+  margin-bottom: 0.25rem;
+}
+
+/* Features: icons and text with a rule, no card frames. */
+.xh-features .sd-col p {
+  margin-bottom: 0.25rem;
+}
+.xh-features .sd-col {
+  padding-left: 1rem;
+  border-left: 2px solid
+    color-mix(in srgb, var(--xtft-accent) 45%, transparent);
+}
+.xh-icon {
+  color: var(--xtft-accent);
+}
+
+/* Gallery strip. */
+.xh-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 860px) {
+  .xh-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.xh-gallery a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-decoration: none;
+  color: var(--pst-color-text-base);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.xh-gallery img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--pst-color-border);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.xh-gallery a:hover img {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+}
+
+/* Next steps: links with a rule, not cards. */
+.xh-next {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 2rem;
+}
+@media (max-width: 700px) {
+  .xh-next {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.xh-next a {
+  display: flex;
+  flex-direction: column;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--pst-color-border);
+  text-decoration: none;
+  color: var(--pst-color-text-base);
+}
+.xh-next a strong::after {
+  content: " \2192";
+  color: var(--xtft-accent);
+}
+.xh-next a span {
+  color: var(--pst-color-text-muted);
+  font-size: 0.9rem;
+}
+.xh-next a:hover strong {
+  color: var(--xtft-accent);
+}
+.xh-footnote {
+  margin-top: 2rem;
+  font-size: 0.85rem;
+  color: var(--pst-color-text-muted);
+}
+
+/* ------------------------------------- cards of the index pages */
+.xtft-card,
+.xtft-nav-card {
+  border-radius: 10px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.xtft-card .sd-card-title,
+.xtft-nav-card .sd-card-title {
+  font-weight: 700;
+}
+.xtft-nav-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+/* Gallery thumbnails with a soft frame. */
+.sphx-glr-thumbcontainer {
+  border-radius: 8px;
+}

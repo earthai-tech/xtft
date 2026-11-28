@@ -72,6 +72,13 @@ def windowed_sinc_lowpass(factor: int, taps_per_factor: int = 2):
     get no weight. For :math:`s = 1` the kernel is the unit
     impulse.
 
+    References
+    ----------
+    .. [1] Oppenheim, A. V. and Schafer, R. W. (2010).
+       Discrete-Time Signal Processing, 3rd ed. Pearson. Sections
+       4.6 (sampling rate reduction) and 7.5 (FIR design by
+       windowing).
+
     Examples
     --------
     >>> from xtft.nn.torch.layers import windowed_sinc_lowpass
