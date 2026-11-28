@@ -7,24 +7,20 @@
   <em>Forecast many related time series at once, with static, observed and known-future inputs, and with intervals that keep the coverage they claim.</em>
   <br/><br/>
   <a href="https://pypi.org/project/xtft/"><img alt="PyPI" src="https://img.shields.io/pypi/v/xtft?label=PyPI&color=orange&logo=pypi&logoColor=white"/></a>
-  <a href="https://test.pypi.org/project/xtft/"><img alt="TestPyPI" src="https://img.shields.io/pypi/v/xtft?pypiBaseUrl=https://test.pypi.org&label=TestPyPI&color=lightgrey&logo=pypi&logoColor=white"/></a>
   <a href="https://github.com/earthai-tech/xtft/actions/workflows/release.yml"><img alt="Release" src="https://github.com/earthai-tech/xtft/actions/workflows/release.yml/badge.svg"/></a>
   <a href="https://github.com/earthai-tech/xtft/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/earthai-tech/xtft/actions/workflows/tests.yml/badge.svg?branch=master"/></a>
   <a href="https://codecov.io/gh/earthai-tech/xtft"><img alt="Coverage" src="https://codecov.io/gh/earthai-tech/xtft/branch/master/graph/badge.svg"/></a>
-  <a href="https://xtft.readthedocs.io/en/latest/"><img alt="Read the Docs" src="https://readthedocs.org/projects/xtft/badge/?version=latest"/></a>
-  <a href="https://github.com/earthai-tech/xtft/actions/workflows/docs.yml"><img alt="Docs build" src="https://github.com/earthai-tech/xtft/actions/workflows/docs.yml/badge.svg?branch=master"/></a>
+  <a href="https://xtft.readthedocs.io/en/latest/"><img alt="Docs" src="https://github.com/earthai-tech/xtft/actions/workflows/docs.yml/badge.svg?branch=master"/></a>
   <a href="https://github.com/earthai-tech/xtft/actions/workflows/lint.yml"><img alt="Lint" src="https://github.com/earthai-tech/xtft/actions/workflows/lint.yml/badge.svg?branch=master"/></a>
   <br/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776ab?logo=python&logoColor=white"/>
-  <img alt="Backend: PyTorch (default)" src="https://img.shields.io/badge/backend-PyTorch%20%E2%89%A5%202.1%20(default)-ee4c2c?logo=pytorch&logoColor=white"/>
-  <img alt="Backend: TensorFlow / Keras 3 (optional)" src="https://img.shields.io/badge/backend-TensorFlow%20%2F%20Keras%203%20(optional)-ff6f00?logo=tensorflow&logoColor=white"/>
+  <img alt="Backends: PyTorch (default) | TensorFlow/Keras 3" src="https://img.shields.io/badge/backend-PyTorch%20%7C%20TensorFlow-ee4c2c?logo=pytorch&logoColor=white"/>
   <img alt="Devices" src="https://img.shields.io/badge/devices-CPU%20%7C%20CUDA%20%7C%20MPS-76b900?logo=nvidia&logoColor=white"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey"/>
   <br/>
   <a href="https://github.com/astral-sh/ruff"><img alt="Code style: ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"/></a>
   <a href="https://numpydoc.readthedocs.io/"><img alt="Docstrings: numpydoc" src="https://img.shields.io/badge/docstrings-numpydoc-4dabcf"/></a>
   <a href="https://docs.pytest.org/"><img alt="Tested with pytest" src="https://img.shields.io/badge/tested%20with-pytest-0a9edc?logo=pytest&logoColor=white"/></a>
-  <a href="https://www.sphinx-doc.org/"><img alt="Docs: Sphinx" src="https://img.shields.io/badge/docs-Sphinx%20%2B%20pydata-0a507a?logo=sphinx&logoColor=white"/></a>
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img alt="License: BSD-3-Clause" src="https://img.shields.io/badge/license-BSD--3--Clause-blue"/></a>
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen"/></a>
   <br/><br/>
