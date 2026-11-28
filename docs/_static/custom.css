@@ -15,8 +15,26 @@ html[data-theme="dark"] {
   --xtft-accent: #3cc9ad;
 }
 
+/* Brand: the symbol and the name set like the logo's wordmark
+   (same typeface, bold, wide tracking), close to the symbol. */
+.navbar-brand {
+  gap: 0.45rem;
+}
 .navbar-brand img {
   height: 30px;
+  margin-right: 0;
+}
+.navbar-brand p.title {
+  font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial,
+    sans-serif;
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: 0.14em;
+  margin: 0;
+  color: var(--pst-color-text-base);
+}
+.navbar-brand:hover p.title {
+  color: var(--xtft-accent);
 }
 
 /* Wide tables scroll instead of widening the page. */

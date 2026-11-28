@@ -104,7 +104,7 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_theme_options = {
     "logo": {
-        "text": "xtft",
+        "text": "XTFT",
         "image_light": "_static/logo/xtft-symbol.svg",
         "image_dark": "_static/logo/xtft-symbol-dark.svg",
     },
